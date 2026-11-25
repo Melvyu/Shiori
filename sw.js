@@ -1,6 +1,6 @@
 // Shiori service worker: keeps the app working offline.
-const V = 'shiori-v2';
-const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'db.js', 'convert.js', 'manifest.webmanifest',
+const V = 'shiori-v3';
+const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'db.js', 'convert.js', 'sync.js', 'manifest.webmanifest',
   'vendor/pdf.min.mjs', 'vendor/pdf.worker.min.mjs',
   'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',
   'fonts/dotgothic16-latin-400-normal.woff2', 'fonts/geist-mono-latin-400-normal.woff2', 'fonts/geist-mono-latin-500-normal.woff2',

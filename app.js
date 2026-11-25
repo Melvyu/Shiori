@@ -1,5 +1,6 @@
 // Shiori — personal PDF library & reader. All data lives on this device (IndexedDB).
 import { db } from './db.js';
+import * as SY from './sync.js';
 
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -32,7 +33,11 @@ async function getCover(id) {
   const b = await db.get('files', 'cover:' + id); const u = b ? URL.createObjectURL(b) : ''; coverURL.set(id, u); return u;
 }
 const bookById = id => BOOKS.find(b => b.id === id);
-const saveBook = b => db.put('books', b);
+const saveBook = b => { b.updated = Date.now(); schedSync(); return db.put('books', b); };
+const putMark = m => { m.mod = Date.now(); schedSync(); return db.put('marks', m); };
+const delMark = async id => { await db.del('marks', id); await SY.markDeleted(id); schedSync(); };
+let syncT = null;
+function schedSync(ms = 8000) { if (!SY.isConnected()) return; clearTimeout(syncT); syncT = setTimeout(runSync, ms); }
 const bookEl = (b, extra = '') => `<div class="book" data-cover="${b.id}"><span class="ph">${esc(b.title)}</span>${extra}</div>`;
 async function fillCovers(root) { for (const el of $$('[data-cover]', root)) { const u = await getCover(el.dataset.cover); if (u && !el.querySelector('img')) { el.insertAdjacentHTML('afterbegin', `<img alt="" src="${u}">`); const ph = el.querySelector('.ph'); if (ph) ph.remove(); } } }
 
@@ -194,7 +199,7 @@ function coverSheet(b) {
   sheet(`<h3 class="t24" style="margin:4px 0 8px">Change cover</h3><p class="muted small" style="margin:0 0 16px">Use another page of the book, or a picture.</p><label class="field"><span class="lbl">Use page</span><input id="cvN" type="number" inputmode="numeric" min="1" max="${b.pageCount}" value="1"></label><button class="btn" id="cvPage" style="margin-top:16px">Use this page</button><button class="btn sec" id="cvImg" style="margin-top:8px">${ic('image', 16)}Choose a picture</button><input type="file" id="cvFile" accept="image/*" hidden>`, s => {
     $('#cvPage', s).onclick = async () => {
       const n = Math.max(1, Math.min(b.pageCount, parseInt($('#cvN', s).value) || 1));
-      try { const { pdfjs, renderPage, DOC_OPTS } = await import('./convert.js'); const blob = await db.get('files', 'pdf:' + b.id); const pdf = await pdfjs.getDocument({ data: new Uint8Array(await blob.arrayBuffer()), ...DOC_OPTS }).promise; const pg = await pdf.getPage(n); const { canvas } = await renderPage(pg, 600); const cb = await new Promise(r => canvas.toBlob(r, 'image/jpeg', .88)); await setCover(b, cb); pdf.destroy(); closeSheet(); } catch (e) { toast('Couldn’t read that page', { low: true }); }
+      try { const { pdfjs, renderPage, DOC_OPTS } = await import('./convert.js'); const blob = await SY.getPdf(b.id); if (!blob) throw new Error('no pdf'); const pdf = await pdfjs.getDocument({ data: new Uint8Array(await blob.arrayBuffer()), ...DOC_OPTS }).promise; const pg = await pdf.getPage(n); const { canvas } = await renderPage(pg, 600); const cb = await new Promise(r => canvas.toBlob(r, 'image/jpeg', .88)); await setCover(b, cb); pdf.destroy(); closeSheet(); } catch (e) { toast('Couldn’t read that page', { low: true }); }
     };
     $('#cvImg', s).onclick = () => $('#cvFile', s).click();
     $('#cvFile', s).onchange = async e => { const f = e.target.files[0]; if (!f) return; await setCover(b, f); closeSheet(); };
@@ -205,7 +210,7 @@ async function deleteBook(id) {
   const t = $(`.tile[data-id="${id}"]`); t && t.classList.add('collapse');
   const b = bookById(id); const keys = ['cover:' + id, 'pdf:' + id, ...((b && b.imgKeys) || []).map(k => 'img:' + id + ':' + k)];
   const marks = await db.byBook(id);
-  await db.delMany('files', keys); await db.del('content', id); await db.delMany('marks', marks.map(m => m.id)); await db.del('books', id);
+  await db.delMany('files', keys); await db.del('content', id); await db.delMany('marks', marks.map(m => m.id)); await db.del('books', id); await SY.bookDeleted(id); schedSync(1500);
   BOOKS = BOOKS.filter(x => x.id !== id); contentCache.delete(id);
   setTimeout(() => { if (cur() !== 'library') resetTo('library'); else renderGrid(); }, 280);
   toast('Book deleted', { low: true });
@@ -267,11 +272,11 @@ async function convertOne(file, i, n) {
   const chapters = res.toc.length, imgs = res.images.length;
   info[0] = `${res.pageCount} pages${res.scanned ? ' · scanned' : ''}`; info[1] = 'done'; info[2] = imgs ? `${imgs} image${imgs > 1 ? 's' : ''}` : 'no images'; info[3] = `${chapters} section${chapters === 1 ? '' : 's'}` + (res.lang === 'ja' || res.scanned ? '' : ` · ${res.words.toLocaleString('en')} words`);
   // save everything
-  const book = { id, title: res.title, author: res.author, pageCount: res.pageCount, lang: res.lang, scanned: res.scanned, added: Date.now(), status: 'want', rating: 0, review: '', pos: null, pct: 0, lastRead: 0, readSec: 0, fileName: file.name, fileSize: file.size, imgKeys: res.images.map(x => x.key), words: res.words, chapters, cv: CONV };
+  const book = { id, title: res.title, author: res.author, pageCount: res.pageCount, lang: res.lang, scanned: res.scanned, added: Date.now(), status: 'want', rating: 0, review: '', pos: null, pct: 0, lastRead: 0, readSec: 0, fileName: file.name, fileSize: file.size, imgKeys: res.images.map(x => x.key), words: res.words, chapters, cv: CONV, contentVer: Date.now() };
   try {
     await db.putMany('files', [[res.coverBlob, 'cover:' + id], [res.pdfBlob, 'pdf:' + id], ...res.images.map(x => [x.blob, 'img:' + id + ':' + x.key])]);
     await db.put('content', { blocks: res.blocks, toc: res.toc, contents: res.contents }, id);
-    await saveBook(book); BOOKS.push(book);
+    await saveBook(book); BOOKS.push(book); schedSync(1500);
   } catch (e) {
     console.error(e); $('#mkTitle').textContent = 'Not enough space'; $('#mkNote').textContent = 'Your phone ran out of room for this book.'; goB.disabled = false; goB.innerHTML = 'Back to library'; goB.onclick = () => resetTo('library'); return null;
   }
@@ -363,7 +368,7 @@ async function rebuildBook(b) {
   if ((b.cv || 1) >= CONV || rebuilding) return;
   rebuilding = true; const t = toast('Tidying this book — skipping the front pages…', { ms: 60000 });
   try {
-    const blob = await db.get('files', 'pdf:' + b.id); if (!blob) return;
+    const blob = await SY.getPdf(b.id); if (!blob) return;
     const { convertPdf } = await import('./convert.js');
     const res = await convertPdf(new File([blob], b.fileName || 'book.pdf', { type: 'application/pdf' }));
     await db.delMany('files', (b.imgKeys || []).map(k => 'img:' + b.id + ':' + k));
@@ -378,9 +383,11 @@ async function rebuildBook(b) {
       if (m.kind === 'hl') { const s = sents.find(x => x.x === m.text) || sents.find(x => x.x.includes(m.text.slice(0, 60))); if (s) put.push({ ...m, key: s.key, b: s.b, id: b.id + ':' + s.key }); }
       else if (m.kind === 'bm') { const i = firstOfPage[m.page]; if (i !== undefined) put.push({ ...m, b: i }); }
     }
-    if (del.length) await db.delMany('marks', del); if (put.length) await db.putMany('marks', put.map(m => [m]));
+    const keepIds = new Set(put.map(m => m.id)); const gone = del.filter(x => !keepIds.has(x));
+    if (del.length) await db.delMany('marks', del); for (const x of gone) await SY.markDeleted(x);
+    const now = Date.now() + 5; put.forEach(m => m.mod = now); if (put.length) await db.putMany('marks', put.map(m => [m]));
     if (b.pos) { const i = firstOfPage[b.pos.page]; b.pos = i === undefined ? null : { b: i, page: b.pos.page }; }
-    Object.assign(b, { cv: CONV, imgKeys: res.images.map(x => x.key), chapters: res.toc.length, words: res.words });
+    Object.assign(b, { cv: CONV, contentVer: Date.now(), imgKeys: res.images.map(x => x.key), chapters: res.toc.length, words: res.words });
     await saveBook(b); contentCache.delete(b.id);
   } catch (e) { console.warn('rebuild failed', e); b.cv = CONV; await saveBook(b); }
   finally { rebuilding = false; t.classList.remove('on'); }
@@ -535,7 +542,7 @@ function showQ(el, existing, full) {
   q.style.visibility = 'hidden'; q.classList.add('on'); const h = q.offsetHeight;
   let top = r0.top - pr.top - 12 - h, below = false; if (top < (parseFloat(getComputedStyle(rs).paddingTop) || 100) - 20) { top = rl.bottom - pr.top + 12; below = true; }
   top = Math.min(top, pr.height - h - 10); q.style.top = top + 'px'; q.style.visibility = '';
-  const c = $('#qc', q); const cx = Math.min(Math.max(r0.left - pr.left + 10, 36), pr.width - 40) - 16 - 9; c.style.left = cx + 'px';
+  const c = $('#qc', q); const qr = q.getBoundingClientRect(); const cx = Math.min(Math.max(r0.left - qr.left + 10, 20), qr.width - 40); c.style.left = cx + 'px';
   c.style.borderColor = 'transparent'; if (below) { c.style.top = '-19px'; c.style.bottom = ''; c.style.borderBottomColor = '#111'; } else { c.style.bottom = '-19px'; c.style.top = ''; c.style.borderTopColor = '#111'; }
   $$('[data-k]', q).forEach(b => b.onclick = () => keep(b.dataset.k));
   $$('[data-m]', q).forEach(b => b.onclick = () => showQ(el, existing, true));
@@ -552,19 +559,19 @@ function paintAll(key) { allS(key).forEach(el => { el.classList.remove('sel', 'h
 async function keep(color) {
   const key = selKey; const prev = MARKS.get(key) ? { ...MARKS.get(key) } : null; const si = sentIdx.get(key); const b = SENTS[si].b;
   const m = prev ? { ...prev, color } : { id: RB.id + ':' + key, book: RB.id, kind: 'hl', key, b, color, text: SENTS[si].x, note: '', page: pageOf[b], ch: (chapterAt(b).c || {}).title || '', at: Date.now() };
-  MARKS.set(key, m); await db.put('marks', m); hideQ(); paintAll(key);
+  MARKS.set(key, m); await putMark(m); hideQ(); paintAll(key);
   const t = toast(`<span style="display:flex;gap:6px;align-items:center"><i style="width:10px;height:10px;background:var(--${color}S);display:block;flex:none"></i>Kept as ${HL[color]}</span><u>Undo</u>`, { ms: 4000 });
-  $('u', t).onclick = async () => { if (prev) { MARKS.set(key, prev); await db.put('marks', prev); } else { MARKS.delete(key); await db.del('marks', m.id); } paintAll(key); t.classList.remove('on'); };
+  $('u', t).onclick = async () => { if (prev) { MARKS.set(key, prev); await putMark(prev); } else { MARKS.delete(key); await delMark(m.id); } paintAll(key); t.classList.remove('on'); };
 }
 async function removeHl(key) {
-  const prev = MARKS.get(key); if (!prev) return; MARKS.delete(key); await db.del('marks', prev.id); hideQ(); paintAll(key);
-  const t = toast(`Highlight removed<u>Undo</u>`, { ms: 4000 }); $('u', t).onclick = async () => { MARKS.set(key, prev); await db.put('marks', prev); paintAll(key); t.classList.remove('on'); };
+  const prev = MARKS.get(key); if (!prev) return; MARKS.delete(key); await delMark(prev.id); hideQ(); paintAll(key);
+  const t = toast(`Highlight removed<u>Undo</u>`, { ms: 4000 }); $('u', t).onclick = async () => { MARKS.set(key, prev); await putMark(prev); paintAll(key); t.classList.remove('on'); };
 }
 function noteSheet(key) {
   const si = sentIdx.get(key); const m0 = MARKS.get(key);
   sheet(`<h3 class="t24" style="margin:4px 0 16px">Note</h3><div style="border-left:3px solid var(--${m0 ? m0.color : 'idea'}S);padding-left:12px;font:italic 14px/20px Newsreader,serif;color:var(--g)">“${esc(SENTS[si].x)}”</div><textarea id="nt" style="margin-top:16px;width:100%;height:120px;border:1.5px solid #111;padding:14px;resize:none;outline:none;line-height:22px" placeholder="Write a thought…">${esc(m0 && m0.note || '')}</textarea><div class="mono muted" style="font-size:10px;margin-top:8px">Saves as you type · shows as a pen mark next to the sentence</div><button class="btn" style="margin-top:24px" id="ntDone">Done</button>`, b => {
     const t = $('#nt', b); setTimeout(() => t.focus(), 320); let tm;
-    const saveNote = async () => { let m = MARKS.get(key); const v = t.value.trim(); if (!m) { if (!v) return; const bi = SENTS[si].b; m = { id: RB.id + ':' + key, book: RB.id, kind: 'hl', key, b: bi, color: 'idea', text: SENTS[si].x, note: '', page: pageOf[bi], ch: (chapterAt(bi).c || {}).title || '', at: Date.now() }; } m.note = v; MARKS.set(key, m); await db.put('marks', m); };
+    const saveNote = async () => { let m = MARKS.get(key); const v = t.value.trim(); if (!m) { if (!v) return; const bi = SENTS[si].b; m = { id: RB.id + ':' + key, book: RB.id, kind: 'hl', key, b: bi, color: 'idea', text: SENTS[si].x, note: '', page: pageOf[bi], ch: (chapterAt(bi).c || {}).title || '', at: Date.now() }; } m.note = v; MARKS.set(key, m); await putMark(m); };
     t.oninput = () => { clearTimeout(tm); tm = setTimeout(saveNote, 300); };
     $('#ntDone', b).onclick = async () => { clearTimeout(tm); await saveNote(); closeSheet(); };
   }, async () => { await sleep(350); paintAll(key); $$('.s.sel').forEach(x => x.classList.remove('sel')); });
@@ -572,15 +579,15 @@ function noteSheet(key) {
 // bookmarks
 $('#bmBtn').onclick = async () => {
   const i = topBlock(); const p = pageOf[i] || '1'; const ex = BMS.find(m => m.page === p);
-  if (ex) { BMS = BMS.filter(m => m !== ex); await db.del('marks', ex.id); toast('Bookmark removed', { low: true, ms: 1500 }); }
-  else { const m = { id: RB.id + ':bm:' + p, book: RB.id, kind: 'bm', b: i, page: p, ch: (chapterAt(i).c || {}).title || '', at: Date.now() }; BMS.push(m); await db.put('marks', m); toast(`Bookmarked p. ${esc(p)}`, { low: true, ms: 1500 }); }
+  if (ex) { BMS = BMS.filter(m => m !== ex); await delMark(ex.id); toast('Bookmark removed', { low: true, ms: 1500 }); }
+  else { const m = { id: RB.id + ':bm:' + p, book: RB.id, kind: 'bm', b: i, page: p, ch: (chapterAt(i).c || {}).title || '', at: Date.now() }; BMS.push(m); await putMark(m); toast(`Bookmarked p. ${esc(p)}`, { low: true, ms: 1500 }); }
   updateProgress(false);
 };
 // original page view
 async function originalPage(n, lab) {
   if (!n) return;
   sheet(`<div style="display:flex;justify-content:space-between;align-items:center;margin:4px 0 12px"><h3 class="t24" style="margin:0">Original page</h3><span class="mono muted" style="font-size:11px">${esc(lab)}</span></div><div class="orig" id="origBox"><p class="muted small" style="padding:20px">Loading…</p></div><div class="muted small" style="margin-top:12px">Exactly as it looks in the PDF — useful for tables and charts.</div>`, async b => {
-    try { const { pdfjs, renderPage, DOC_OPTS } = await import('./convert.js'); const blob = await db.get('files', 'pdf:' + RB.id); const pdf = await pdfjs.getDocument({ data: new Uint8Array(await blob.arrayBuffer()), ...DOC_OPTS }).promise; const pg = await pdf.getPage(n); const { canvas } = await renderPage(pg, Math.min(1600, ph.clientWidth * (devicePixelRatio || 2))); const box = $('#origBox', b); if (box) { box.innerHTML = ''; box.appendChild(canvas); } pdf.destroy(); } catch (e) { const box = $('#origBox', b); if (box) box.innerHTML = '<p class="muted small" style="padding:20px">Couldn’t show this page.</p>'; }
+    try { const { pdfjs, renderPage, DOC_OPTS } = await import('./convert.js'); const blob = await SY.getPdf(RB.id); if (!blob) throw new Error('no pdf'); const pdf = await pdfjs.getDocument({ data: new Uint8Array(await blob.arrayBuffer()), ...DOC_OPTS }).promise; const pg = await pdf.getPage(n); const { canvas } = await renderPage(pg, Math.min(1600, ph.clientWidth * (devicePixelRatio || 2))); const box = $('#origBox', b); if (box) { box.innerHTML = ''; box.appendChild(canvas); } pdf.destroy(); } catch (e) { const box = $('#origBox', b); if (box) box.innerHTML = '<p class="muted small" style="padding:20px">Couldn’t show this page.</p>'; }
   });
 }
 
@@ -647,7 +654,7 @@ $('#tContents').onclick = () => {
     const ch = () => RC.toc.length ? RC.toc.map((t, k) => { const nx = RC.toc[k + 1]; const here = i >= t.b && (!nx || i < nx.b); const done = nx && i >= nx.b; return `<button class="row" data-jb="${t.b}" style="min-height:${here ? 64 : 52}px;padding:8px 12px;${here ? 'background:#111;color:#fff;border:0' : ''};${done ? 'color:var(--g)' : ''}"><span style="display:flex;gap:12px;align-items:baseline;text-align:left;min-width:0"><span class="dot" style="font-size:16px;width:22px;flex:none">${k + 1}</span><span>${esc(t.title)}${here ? `<br><span class="mono" style="font-size:10px;color:#CFCFCA">You’re here · p. ${esc(pageOf[i])}</span>` : ''}</span></span><span class="mono" style="font-size:12px;flex:none">${done ? '✓ ' : ''}${esc(t.p)}</span></button>`; }).join('') : '<p class="muted small">This PDF has no chapters we could find.</p>';
     const bm = () => BMS.length ? [...BMS].sort((x, y) => x.b - y.b).map(m => `<div class="row" style="height:52px"><button data-jb="${m.b}" style="display:flex;gap:12px;align-items:center;flex:1;height:100%;text-align:left"><svg width="12" height="20" viewBox="0 0 12 20"><path d="M0 0h12v19l-6-5-6 5z" fill="#111"/></svg><span>Page ${esc(m.page)}<span class="muted small"> · ${esc(m.ch)}</span></span></button><button data-delbm="${esc(m.id)}" aria-label="Remove bookmark" style="padding:8px">${ic('close', 16)}</button></div>`).join('') : '<p class="muted small" style="line-height:20px">No bookmarks yet. Tap the bookmark button at the top while reading.</p>';
     const L = $('#cL', b);
-    const wire = () => { $$('[data-jb]', L).forEach(r => r.onclick = () => { const t = +r.dataset.jb; closeSheet(); jumpTo(t); }); $$('[data-delbm]', L).forEach(x => x.onclick = async () => { const id = x.dataset.delbm; BMS = BMS.filter(m => m.id !== id); await db.del('marks', id); L.innerHTML = bm(); wire(); updateProgress(false); }); };
+    const wire = () => { $$('[data-jb]', L).forEach(r => r.onclick = () => { const t = +r.dataset.jb; closeSheet(); jumpTo(t); }); $$('[data-delbm]', L).forEach(x => x.onclick = async () => { const id = x.dataset.delbm; BMS = BMS.filter(m => m.id !== id); await delMark(id); L.innerHTML = bm(); wire(); updateProgress(false); }); };
     L.innerHTML = ch(); wire();
     $$('#cT button', b).forEach((x, k) => x.onclick = () => { $$('#cT button', b).forEach(y => y.classList.toggle('on', y === x)); L.innerHTML = k ? bm() : ch(); wire(); });
   });
@@ -824,15 +831,16 @@ ENTER.journal = async () => {
 ENTER.settings = async () => {
   let est = ''; try { const e = await navigator.storage.estimate(); est = `${(e.usage / 1048576).toFixed(1)} MB used`; } catch (e) { }
   let persisted = false; try { persisted = await navigator.storage.persisted(); } catch (e) { }
-  $('#setBody').innerHTML = `<div class="lbl" style="margin:8px 0 8px">Your library</div>
-  <div class="row" style="min-height:56px"><span>Books on this phone<br><span class="muted small">${BOOKS.length} book${BOOKS.length === 1 ? '' : 's'}${est ? ' · ' + est : ''}</span></span></div>
+  const syncHTML = await syncSection(); const syncOn = (await SY.status()).connected;
+  $('#setBody').innerHTML = `<div class="lbl" style="margin:8px 0 8px">Sync</div>${syncHTML}<div class="lbl" style="margin:32px 0 8px">Your library</div>
+  <div class="row" style="min-height:56px"><span>Books on this device<br><span class="muted small">${BOOKS.length} book${BOOKS.length === 1 ? '' : 's'}${est ? ' · ' + est : ''}</span></span></div>
   <div class="row" style="min-height:56px"><span>Keep my books safe<br><span class="muted small">${persisted ? 'On — your phone won’t clear Shiori’s storage' : 'Asks your phone not to clear Shiori’s storage'}</span></span>${persisted ? ic('check', 18) : '<button class="btn sm sec" id="persist" style="width:auto;height:36px;padding:0 12px;font-size:11px">Turn on</button>'}</div>
   <div class="lbl" style="margin:32px 0 8px">Backup</div>
   <p class="muted small" style="line-height:18px;margin:0 0 12px">Saves your highlights, notes, bookmarks, reviews and progress as one file. Your PDFs aren’t included — keep those in Files.</p>
   <button class="btn sec" id="bkOut">${ic('share', 16)}Export backup</button><button class="btn sec" id="bkIn" style="margin-top:8px">${ic('upload', 16)}Restore from backup</button>
-  <div class="lbl" style="margin:32px 0 8px">About</div><p class="muted small" style="line-height:18px;margin:0">Shiori keeps everything on this phone — nothing is uploaded. Version 1.0.</p>
+  <div class="lbl" style="margin:32px 0 8px">About</div><p class="muted small" style="line-height:18px;margin:0">Shiori keeps everything on your devices${syncOn ? ' and in your own Dropbox' : ''} — nothing goes anywhere else. Version 1.1.</p>
   <button class="btn warn" id="wipe" style="margin-top:32px">Delete everything</button>`;
-  hydrate($('#setBody'));
+  hydrate($('#setBody')); wireSync($('#setBody'));
   const pb = $('#persist'); if (pb) pb.onclick = async () => { let ok = false; try { ok = await navigator.storage.persist(); } catch (e) { } toast(ok ? 'Turned on' : 'Your phone said no — adding Shiori to your Home Screen helps', { low: true, ms: 3200 }); ENTER.settings(); };
   $('#bkOut').onclick = exportBackup; $('#bkIn').onclick = () => { $('#backupIn').value = ''; $('#backupIn').click(); };
   $('#wipe').onclick = () => confirmBox('Delete everything?', 'Every book, highlight and note in Shiori will be removed from this phone. This can’t be undone.', async () => { for (const s of ['books', 'content', 'files', 'marks', 'kv']) { const ks = await db.keys(s); await db.delMany(s, ks); } BOOKS = []; contentCache.clear(); coverURL.clear(); S = { ...DEF }; resetTo('library'); toast('Everything deleted', { low: true }); });
@@ -848,11 +856,72 @@ $('#backupIn').addEventListener('change', async e => {
   try {
     const data = JSON.parse(await f.text()); if (data.app !== 'shiori') throw new Error('not a backup');
     let matched = 0, marks = 0;
-    for (const ob of data.books || []) { const b = BOOKS.find(x => x.id === ob.id) || BOOKS.find(x => x.fileName === ob.fileName && x.fileSize === ob.fileSize); if (!b) continue; matched++; Object.assign(b, { status: ob.status, rating: ob.rating, review: ob.review, pos: ob.pos, pct: ob.pct, lastRead: ob.lastRead, readSec: ob.readSec, finished: ob.finished, title: ob.title, author: ob.author }); await saveBook(b); const ms = (data.marks || []).filter(m => m.book === ob.id).map(m => ({ ...m, book: b.id, id: m.id.replace(ob.id, b.id) })); marks += ms.length; if (ms.length) await db.putMany('marks', ms.map(m => [m])); }
+    for (const ob of data.books || []) { const b = BOOKS.find(x => x.id === ob.id) || BOOKS.find(x => x.fileName === ob.fileName && x.fileSize === ob.fileSize); if (!b) continue; matched++; Object.assign(b, { status: ob.status, rating: ob.rating, review: ob.review, pos: ob.pos, pct: ob.pct, lastRead: ob.lastRead, readSec: ob.readSec, finished: ob.finished, title: ob.title, author: ob.author }); await saveBook(b); const ms = (data.marks || []).filter(m => m.book === ob.id).map(m => ({ ...m, book: b.id, id: m.id.replace(ob.id, b.id) })); marks += ms.length; const now = Date.now(); ms.forEach(m => m.mod = now); if (ms.length) await db.putMany('marks', ms.map(m => [m])); schedSync(1500); }
     if (data.days) { const d = (await db.get('kv', 'days')) || {}; for (const k in data.days) d[k] = Math.max(d[k] || 0, data.days[k]); await db.put('kv', d, 'days'); }
     toast(matched ? `Restored ${marks} highlights for ${matched} book${matched > 1 ? 's' : ''}` : 'Add the same PDFs first, then restore', { low: true, ms: 3200 });
   } catch (err) { toast('That file isn’t a Shiori backup', { low: true }); }
 });
+
+// ---------- sync with Dropbox ----------
+const syncCtx = {
+  book: id => BOOKS.find(b => b.id.toLowerCase() === String(id).toLowerCase()),
+  books: () => BOOKS,
+  async removeLocal(id) { const b = syncCtx.book(id); if (!b) return; id = b.id; const keys = ['cover:' + id, 'pdf:' + id, ...(b.imgKeys || []).map(k => 'img:' + id + ':' + k)]; const marks = await db.byBook(id); await db.delMany('files', keys); await db.del('content', id); await db.delMany('marks', marks.map(m => m.id)); await db.del('books', id); BOOKS = BOOKS.filter(x => x.id !== id); contentCache.delete(id); const u = coverURL.get(id); if (u) URL.revokeObjectURL(u); coverURL.delete(id); },
+  async addLocal(meta) { await db.put('books', meta); BOOKS = BOOKS.filter(x => x.id !== meta.id); BOOKS.push(meta); },
+  async applyMeta(meta) { const b = syncCtx.book(meta.id); if (!b) return; if (meta.contentVer !== b.contentVer) contentCache.delete(b.id); Object.assign(b, meta); await db.put('books', b); coverURL.delete(b.id); },
+  marksChanged() { },
+  progress(msg) { const s = $('#syncState'); if (s) s.textContent = msg; }
+};
+let syncBusy = false;
+async function runSync(manual) {
+  clearTimeout(syncT); if (!SY.isConnected() || syncBusy) return; syncBusy = true;
+  const spin = $('#syncBtn'); spin && spin.classList.add('spin');
+  const r = await SY.sync(syncCtx); syncBusy = false; spin && spin.classList.remove('spin');
+  if (!r) return;
+  if (r.error) { if (manual) toast(esc(r.error), { low: true, ms: 3000 }); }
+  else if (r.added || r.removed || r.updated) {
+    if (r.added) toast(`${r.added} book${r.added > 1 ? 's' : ''} arrived from Dropbox`, { low: true, ms: 2600 });
+    else if (manual) toast('Synced', { low: true });
+    const c = cur(); if (stack.length === 1 && ENTER[c]) ENTER[c]({}); else if (c === 'book') ENTER.book();
+  } else if (manual) toast(r.uploaded ? `Sent ${r.uploaded} book${r.uploaded > 1 ? 's' : ''} to Dropbox` : 'Everything is up to date', { low: true });
+  if (cur() === 'settings') ENTER.settings();
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && SY.isConnected()) setTimeout(runSync, 600); });
+addEventListener('online', () => schedSync(1000));
+const ago = t => { if (!t) return 'never'; const s = (Date.now() - t) / 1000; return s < 60 ? 'just now' : s < 3600 ? Math.round(s / 60) + ' min ago' : s < 86400 ? Math.round(s / 3600) + ' h ago' : new Date(t).toLocaleDateString(); };
+async function syncSection() {
+  const s = await SY.status();
+  if (s.connected) return `<div class="row" style="min-height:64px"><span>Dropbox<br><span class="muted small" id="syncState">${esc(s.email || 'Connected')} · synced ${ago(s.last)}${s.error ? ' · ' + esc(s.error) : ''}</span></span><button class="btn sm sec" id="syncNow" style="width:auto;height:36px;padding:0 12px;font-size:11px">Sync now</button></div><p class="muted small" style="line-height:18px;margin:12px 0 0">Books, highlights, notes, bookmarks and your place sync between every device signed in to this Dropbox. The original PDF downloads only when you open its pages.</p><button class="link" id="syncOff" style="margin-top:16px;color:#B3261E">Disconnect Dropbox</button>`;
+  return `<p class="muted small" style="line-height:18px;margin:0 0 12px">Use the same Dropbox on your phone and computer and your books, highlights and progress follow you.</p>${s.key ? '' : `<label class="field" style="margin-top:0"><span class="lbl">Dropbox app key</span><input id="dbxKey" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste the app key"></label>`}<button class="btn" id="dbxGo" style="margin-top:12px">Connect Dropbox</button>${s.key ? `<button class="link" id="dbxKeyChange" style="margin-top:12px">Change app key</button>` : ''}${s.error ? `<p class="small" style="color:#B3261E;margin:8px 0 0">${esc(s.error)}</p>` : ''}`;
+}
+function wireSync(root) {
+  const nowB = $('#syncNow', root); if (nowB) nowB.onclick = () => { $('#syncState').textContent = 'Syncing…'; runSync(true); };
+  const off = $('#syncOff', root); if (off) off.onclick = () => confirmBox('Disconnect Dropbox?', 'Your books stay on this device and in Dropbox. This device just stops syncing.', async () => { await SY.disconnect(); ENTER.settings(); }, 'Disconnect', false);
+  const kc = $('#dbxKeyChange', root); if (kc) kc.onclick = async () => { await SY.setKey(''); ENTER.settings(); };
+  const go = $('#dbxGo', root); if (go) go.onclick = async () => {
+    const k = $('#dbxKey', root); if (k) { if (!k.value.trim()) { toast('Paste your Dropbox app key first', { low: true }); return; } await SY.setKey(k.value); }
+    let url; try { url = await SY.startAuth(); } catch (e) { toast('Needs the app key', { low: true }); return; }
+    window.open(url, '_blank');
+    sheet(`<h3 class="t24" style="margin:4px 0 12px">Connect Dropbox</h3><ol class="muted" style="font-size:14px;line-height:21px;padding-left:18px;margin:0 0 16px"><li>In the Dropbox page that just opened, tap <b style="color:#111">Allow</b>.</li><li>Copy the code it shows you.</li><li>Come back here and paste it below.</li></ol><a class="link" href="${esc(url)}" target="_blank" rel="noopener">Didn’t open? Tap here</a><label class="field"><span class="lbl">Code from Dropbox</span><input id="dbxCode" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste the code"></label><button class="btn" id="dbxDone" style="margin-top:16px">Connect</button>`, b => {
+      $('#dbxDone', b).onclick = async () => { const c = $('#dbxCode', b).value; if (!c.trim()) return; $('#dbxDone', b).disabled = true; try { await SY.finishAuth(c); closeSheet(); toast('Dropbox connected — syncing…', { low: true }); ENTER.settings(); runSync(true); } catch (e) { $('#dbxDone', b).disabled = false; toast(esc(e.message), { low: true, ms: 3200 }); } };
+    });
+  };
+}
+
+// ---------- computer extras: drop PDFs, keyboard, right-click to mark ----------
+ph.addEventListener('dragover', e => { if ([...(e.dataTransfer && e.dataTransfer.items || [])].some(i => i.kind === 'file')) { e.preventDefault(); ph.classList.add('dropping'); } });
+ph.addEventListener('dragleave', e => { if (e.target === ph || !ph.contains(e.relatedTarget)) ph.classList.remove('dropping'); });
+ph.addEventListener('drop', e => { e.preventDefault(); ph.classList.remove('dropping'); const files = [...(e.dataTransfer.files || [])].filter(f => /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name)); if (files.length) importQueue(files); else toast('Only PDF files can be added', { low: true }); });
+document.addEventListener('keydown', e => {
+  if (e.target.closest && e.target.closest('input,textarea')) { if (e.key === 'Escape') e.target.blur(); return; }
+  if (e.key === 'Escape') { if ($('#dialog').classList.contains('on')) closeDialog(); else if (sheetOpen()) closeSheet(); else if ($('#qbar').classList.contains('on')) hideQ(); else if (stack.length > 1) back(); return; }
+  if (cur() !== 'reader' || sheetOpen()) return;
+  if (pageMode && (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown')) { e.preventDefault(); turn(1); }
+  else if (pageMode && (e.key === 'ArrowLeft' || e.key === 'PageUp')) { e.preventDefault(); turn(-1); }
+  else if (!pageMode && (e.key === ' ' || e.key === 'PageDown')) { e.preventDefault(); rs.scrollBy({ top: rs.clientHeight * .85, behavior: RM ? 'auto' : 'smooth' }); }
+  else if (!pageMode && e.key === 'PageUp') { e.preventDefault(); rs.scrollBy({ top: -rs.clientHeight * .85, behavior: RM ? 'auto' : 'smooth' }); }
+});
+['#rscroll', '#pmode'].forEach(id => $(id).addEventListener('contextmenu', e => { const s = e.target.closest('.s'); if (!s) return; e.preventDefault(); clearTimeout(lpT); lpFired = false; selectS(s.dataset.s, s, MARKS.has(s.dataset.s)); }));
 
 // ---------- start ----------
 (async function init() {
@@ -862,6 +931,7 @@ $('#backupIn').addEventListener('change', async e => {
   runSplash();
   await splashP;
   ENTER.library({ first: true }); syncTabs(true);
+  try { if ((await SY.status()).connected) setTimeout(runSync, 1200); } catch (e) { }
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) navigator.serviceWorker.register('sw.js').catch(() => { });
   window.__shiori = { db, BOOKS: () => BOOKS, S: () => S };
 })();
