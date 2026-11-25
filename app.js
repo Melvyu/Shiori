@@ -222,22 +222,55 @@ function pickFiles() { fileIn.value = ''; fileIn.click(); }
 $('#addBtn').onclick = pickFiles;
 fileIn.addEventListener('change', () => { const files = [...fileIn.files].filter(f => /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name)); if (!files.length) { if (fileIn.files.length) toast('Only PDF files can be added', { low: true }); return; } importQueue(files); });
 let importing = false, cancelImport = false, mkWait = null;
-async function importQueue(files) {
+// Every PDF is saved first, then converted. If the phone pauses or closes Shiori mid-way,
+// the book is finished automatically the next time Shiori opens (or as soon as you come back).
+const getPending = async () => (await db.get('kv', 'pending')) || [];
+const setPending = list => db.put('kv', list, 'pending');
+async function dropPending(pid) { await setPending((await getPending()).filter(p => p.pid !== pid)); await db.del('files', 'pending:' + pid); }
+async function importQueue(files, resumed) {
   if (importing) { toast('Already adding a book — one moment', { low: true }); return; }
   importing = true; cancelImport = false;
   try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) { }
   let added = [];
-  for (let i = 0; i < files.length && !cancelImport; i++) {
-    const f = files[i];
-    const dup = BOOKS.find(b => b.fileName === f.name && b.fileSize === f.size);
-    if (dup) { toast(`“${dup.title}” is already on your shelf`, { low: true }); await sleep(900); continue; }
-    const id = await convertOne(f, i, files.length);
-    if (id) added.push(id);
-  }
-  importing = false;
+  try {
+    // 1 · save every chosen PDF straight away so nothing is lost if the app is paused
+    const jobs = [];
+    for (const f of files) {
+      if (f._pid) { jobs.push(f); continue; }
+      const dup = BOOKS.find(b => b.fileName === f.name && b.fileSize === f.size);
+      if (dup) { toast(`“${esc(dup.title)}” is already on your shelf`, { low: true }); await sleep(900); continue; }
+      const pid = uid();
+      try { await db.put('files', f, 'pending:' + pid); const list = await getPending(); list.push({ pid, name: f.name, size: f.size, tries: 0 }); await setPending(list); } catch (e) { }
+      f._pid = pid; jobs.push(f);
+    }
+    // 2 · convert them one by one
+    for (let i = 0; i < jobs.length && !cancelImport; i++) {
+      const id = await convertOne(jobs[i], i, jobs.length);
+      if (id) added.push(id);
+    }
+  } finally { importing = false; }
   return added;
 }
+async function resumePending() {
+  const list = await getPending(); if (!list.length || importing) return;
+  const files = []; const keep = [];
+  for (const p of list) {
+    const blob = await db.get('files', 'pending:' + p.pid);
+    if (!blob || BOOKS.some(b => b.id === p.pid)) { await db.del('files', 'pending:' + p.pid); continue; }
+    if ((p.tries || 0) >= 3) { await db.del('files', 'pending:' + p.pid); toast(`“${esc(p.name)}” was too big for this device — try adding it on your computer`, { ms: 5000 }); continue; }
+    const f = new File([blob], p.name, { type: 'application/pdf' }); f._pid = p.pid; files.push(f); keep.push(p);
+  }
+  await setPending(keep);
+  if (files.length) { toast(`Finishing ${files.length > 1 ? files.length + ' books' : 'your book'}…`, { low: true }); importQueue(files, true); }
+}
 const STEPS = ['Read the text', 'Cleaned up headers & page numbers', 'Pulled images & figures', 'Found chapters & laid out your pages'];
+let mkAbort = null, mkTick = 0, mkBusy = false;
+document.addEventListener('visibilitychange', () => {
+  // coming back after the phone paused us: if the conversion stopped moving, restart it from the saved PDF
+  if (document.hidden || !mkBusy) return;
+  const at = Date.now(); setTimeout(() => { if (mkBusy && mkTick < at && mkAbort) mkAbort.abort(); }, 4000);
+});
+setInterval(() => { if (mkBusy && !document.hidden && Date.now() - mkTick > 45000 && mkAbort) mkAbort.abort(); }, 5000);
 async function convertOne(file, i, n) {
   if (cur() !== 'making') { if (cur() === 'library' && stack.length === 1) go('making'); else resetTo('library'), go('making'); }
   const mk = $('#making');
@@ -254,13 +287,25 @@ async function convertOne(file, i, n) {
     const lit = Math.round(total * 13); ribPx.forEach(x => { const r = +x.dataset.r; x.style.background = r < lit ? '#111' : '#fff'; });
   };
   $$('#mkRib i').forEach((x, k) => x.dataset.r = Math.floor(k / 5));
-  const goB = $('#mkGo'); goB.disabled = true; goB.innerHTML = ic('play', 16, '#9A9A95') + 'Start reading'; $('#mkNote').textContent = 'Keep Shiori open while it works.';
+  const goB = $('#mkGo'); goB.disabled = true; goB.innerHTML = ic('play', 16, '#9A9A95') + 'Start reading'; $('#mkNote').textContent = 'You can switch apps — Shiori carries on when you come back.';
   draw();
   let res;
+  const pid = file._pid || uid();
   try {
     const { convertPdf } = await import('./convert.js');
-    res = await convertPdf(file, (st, fr, x) => { stage = st; frac = fr || 0; if (st === 0 && x && x.pages) info[0] = `${Math.round(frac * x.pages)} of ${x.pages} pages`; draw(); });
+    for (let attempt = 0; ; attempt++) {
+      const list = await getPending(); const pe = list.find(p => p.pid === pid); if (pe) { pe.tries = (pe.tries || 0) + 1; await setPending(list); }
+      const ac = new AbortController(); mkAbort = ac; mkTick = Date.now(); mkBusy = true;
+      try {
+        res = await convertPdf(file, (st, fr, x) => { mkTick = Date.now(); stage = st; frac = fr || 0; if (st === 0 && x && x.pages) info[0] = `${Math.round(frac * x.pages)} of ${x.pages} pages`; draw(); }, { signal: ac.signal });
+        break;
+      } catch (e) {
+        if (ac.signal.aborted && attempt < 3) { stage = 0; frac = 0; info[0] = ''; draw(); $('#mkNote').textContent = 'Picking up where it left off…'; await sleep(300); continue; }
+        throw e;
+      } finally { mkBusy = false; mkAbort = null; }
+    }
   } catch (e) {
+    await dropPending(pid);
     console.error(e);
     const msg = /password/i.test(e && (e.name + e.message)) ? 'This PDF is locked with a password.' : 'This file couldn’t be read as a PDF.';
     $('#mkTitle').textContent = 'Couldn’t make this book'; $('#mkNote').textContent = msg;
@@ -268,7 +313,7 @@ async function convertOne(file, i, n) {
     await new Promise(r => { mkWait = r; const t = setTimeout(() => { if (mkWait === r) { mkWait = null; r(); } }, n > 1 ? 2600 : 600000); goB.addEventListener('click', () => { clearTimeout(t); mkWait = null; r(); }, { once: true }); });
     return null;
   }
-  const id = uid();
+  const id = pid;
   const chapters = res.toc.length, imgs = res.images.length;
   info[0] = `${res.pageCount} pages${res.scanned ? ' · scanned' : ''}`; info[1] = 'done'; info[2] = imgs ? `${imgs} image${imgs > 1 ? 's' : ''}` : 'no images'; info[3] = `${chapters} section${chapters === 1 ? '' : 's'}` + (res.lang === 'ja' || res.scanned ? '' : ` · ${res.words.toLocaleString('en')} words`);
   // save everything
@@ -276,7 +321,7 @@ async function convertOne(file, i, n) {
   try {
     await db.putMany('files', [[res.coverBlob, 'cover:' + id], [res.pdfBlob, 'pdf:' + id], ...res.images.map(x => [x.blob, 'img:' + id + ':' + x.key])]);
     await db.put('content', { blocks: res.blocks, toc: res.toc, contents: res.contents }, id);
-    await saveBook(book); BOOKS.push(book); schedSync(1500);
+    await saveBook(book); BOOKS.push(book); await dropPending(pid); schedSync(1500);
   } catch (e) {
     console.error(e); $('#mkTitle').textContent = 'Not enough space'; $('#mkNote').textContent = 'Your phone ran out of room for this book.'; goB.disabled = false; goB.innerHTML = 'Back to library'; goB.onclick = () => resetTo('library'); return null;
   }
@@ -931,7 +976,8 @@ document.addEventListener('keydown', e => {
   runSplash();
   await splashP;
   ENTER.library({ first: true }); syncTabs(true);
+  setTimeout(() => resumePending().catch(() => { }), 500);
   try { if ((await SY.status()).connected) setTimeout(runSync, 1200); } catch (e) { }
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) navigator.serviceWorker.register('sw.js').catch(() => { });
-  window.__shiori = { db, BOOKS: () => BOOKS, S: () => S };
+  window.__shiori = { db, BOOKS: () => BOOKS, S: () => S, stall: () => mkAbort && mkAbort.abort() };
 })();

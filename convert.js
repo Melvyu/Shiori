@@ -138,10 +138,14 @@ function orderLines(lines, W) {
 const normKey = t => t.toLowerCase().replace(/\d+/g, '#').replace(/[^a-z#぀-鿿]+/g, '').slice(0, 60);
 const isPageNum = t => /^(page\s*)?[\divxlc]{1,6}$/i.test(t.trim()) || /^[-–—\s]*\d{1,4}[-–—\s]*$/.test(t);
 
-export async function convertPdf(file, onStep = () => { }) {
+export async function convertPdf(file, onStep = () => { }, opts = {}) {
+  const signal = opts.signal;
+  const alive = () => { if (signal && signal.aborted) throw new DOMException('Stopped', 'AbortError'); };
   const buf = await file.arrayBuffer();
   const pdfBlob = new Blob([buf], { type: 'application/pdf' });
-  const pdf = await pdfjs.getDocument({ data: new Uint8Array(buf.slice(0)), ...DOC_OPTS }).promise;
+  const task = pdfjs.getDocument({ data: new Uint8Array(buf.slice(0)), ...DOC_OPTS });
+  if (signal) signal.addEventListener('abort', () => { try { task.destroy(); } catch (e) { } }, { once: true });
+  const pdf = await task.promise; alive();
   const N = pdf.numPages;
   let meta = {}; try { meta = (await pdf.getMetadata()).info || {}; } catch (e) { }
   let labels = null; try { labels = await pdf.getPageLabels(); } catch (e) { }
@@ -168,7 +172,7 @@ export async function convertPdf(file, onStep = () => { }) {
     allChars += chars; for (const l of lines) for (const ch of l.text) if (CJK.test(ch)) cjkChars++;
     pages.push({ p, W: vp.width, H: vp.height, lines: orderLines(lines, vp.width), rects, chars });
     page.cleanup && page.cleanup();
-    if (p % 3 === 0 || p === N) onStep(0, p / N, { pages: N });
+    alive(); if (p % 3 === 0 || p === N) onStep(0, p / N, { pages: N });
     if (p % 10 === 0) await new Promise(r => setTimeout(r));
   }
   const lang = cjkChars > allChars * 0.3 ? 'ja' : 'en';
@@ -275,7 +279,7 @@ export async function convertPdf(file, onStep = () => { }) {
       }
       page.cleanup && page.cleanup();
     } catch (e) { console.warn('image page failed', pg.p, e); }
-    onStep(2, (k + 1) / imgPages.length);
+    alive(); onStep(2, (k + 1) / imgPages.length);
     await new Promise(r => setTimeout(r));
   }
   if (!imgPages.length) onStep(2, 1);
@@ -331,7 +335,7 @@ export async function convertPdf(file, onStep = () => { }) {
     }
     if (markerPending && pg.p > 1 && !pg.lines.length && !(pg.items || []).length) { /* empty page: skip marker */ }
     else if (markerPending) { flush(); marker(); }
-    if (pg.p % 20 === 0) { onStep(3, pg.p / N); await new Promise(r => setTimeout(r)); }
+    if (pg.p % 20 === 0) { alive(); onStep(3, pg.p / N); await new Promise(r => setTimeout(r)); }
   }
   flush();
 
