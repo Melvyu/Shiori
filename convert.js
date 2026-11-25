@@ -36,6 +36,8 @@ function longSplit(s) {
   }
   if (rest) out.push(rest); return out;
 }
+const FRONT = /^(front ?cover|cover( page)?|half[- ]?title( page)?|title( page)?|copyright( page)?|dedication|epigraph|(table of )?contents|brief contents|contents (at a glance|in brief|in detail)|detailed contents|list of (figures|tables|illustrations|abbreviations)|acknowledge?ments?|thanks|special thanks|praise( for.*)?|advance praise.*|also by.*|other (books|titles) by.*|about (the )?(authors?|editors?|this (book|e-?book)|the cover)|foreword|preface|prelude|prologue|how to (use|read) this book|credits|colophon|imprint|note(s)? (on|to) (the )?(text|translation|reader)|a note (on|to) .*|welcome|map(s)?|frontispiece)$/i;
+const isFront = t => FRONT.test(String(t).replace(/^[\s\divxlc]+[.:)\-–—]\s*/i, '').replace(/[.:]+$/, '').trim());
 function prettyName(name) {
   return name.replace(/\.pdf$/i, '').replace(/[_]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Untitled';
 }
@@ -198,10 +200,53 @@ export async function convertPdf(file, onStep = () => { }) {
   pages.forEach(pg => { for (let i = 1; i < pg.lines.length; i++) { const a = pg.lines[i - 1], b = pg.lines[i]; if (Math.abs(a.size - body) < 0.6 && Math.abs(b.size - body) < 0.6 && a.col === b.col) { const g = b.y - a.y; if (g > 0 && g < body * 3) gaps.push(g); } } });
   const lineGap = median(gaps) || body * 1.3;
 
+  // the PDF's own outline (bookmarks), two levels deep
+  const pageOf = async dest => {
+    try {
+      if (typeof dest === 'string') dest = await pdf.getDestination(dest);
+      if (!dest) return null; const ref = dest[0];
+      return typeof ref === 'number' ? ref + 1 : (await pdf.getPageIndex(ref)) + 1;
+    } catch (e) { return null; }
+  };
+  let outline = [];
+  try {
+    const ol = await pdf.getOutline();
+    const walk = async (items, lv) => { for (const o of items || []) { const n = o.dest ? await pageOf(o.dest) : null; const title = clean(o.title || '').trim(); if (n && title) outline.push({ title, n, lv }); if (lv < 3 && o.items && o.items.length) await walk(o.items, lv + 1); } };
+    if (ol && ol.length) await walk(ol, 1);
+    // a single top item (usually the book title) wrapping everything: shift levels up
+    while (outline.filter(o => o.lv === 1).length < 3 && outline.some(o => o.lv === 2)) outline = outline.filter(o => o.lv > 1).map(o => ({ ...o, lv: o.lv - 1 }));
+    outline = outline.filter(o => o.lv <= 2).sort((a, b) => a.n - b.n || a.lv - b.lv);
+  } catch (e) { outline = []; }
+
+  // skip the front matter: cover, title pages, copyright, dedication, thanks, contents, foreword…
+  const pageText = pg => pg.lines.map(l => l.text).join(' ');
+  const isCopyright = t => /all rights reserved|\bisbn\b|library of congress|cataloging[- ]in[- ]publication|copyright\s*(©|\(c\)|\d{4})|©\s*\d{4}|first (published|edition)|printed in (the )?[a-z]/i.test(t);
+  const tocLike = pg => { const ends = pg.lines.filter(l => /(\.{2,}|\s)\s*[\divxlc]{1,4}$/i.test(l.text) && l.text.length > 4).length; return ends >= 5 && ends >= pg.lines.length * 0.4; };
+  const headOf = pg => pg.lines.find(l => l.size >= body * 1.18 && l.text.length < 120);
+  const coverLike = pg => pg.chars < 400 || pg.rects.some(r => (r.x1 - r.x0) * (r.y1 - r.y0) > pg.W * pg.H * 0.45);
+  let startPage = 1;
+  const chapters1 = outline.filter(o => o.lv === 1);
+  if (!scanned) {
+    if (chapters1.length >= 2) { const first = chapters1.find(o => !isFront(o.title)); if (first) startPage = first.n; }
+    else {
+      let skipping = false;
+      for (const pg of pages) {
+        if (pg.p > Math.max(14, N * 0.4)) break;
+        const t = pageText(pg); const head = headOf(pg);
+        if (pg.chars < 250 || isCopyright(t) || tocLike(pg)) { if (pg.chars >= 250) skipping = false; continue; }
+        if (head && (isFront(head.text) || /^contents$/i.test(head.text.trim()))) { skipping = true; continue; }
+        if (!head && skipping) continue;
+        startPage = pg.p; break;
+      }
+    }
+    if (startPage > Math.max(14, N * 0.45)) startPage = (pages.find(pg => pg.chars >= 250 && !isCopyright(pageText(pg))) || { p: 1 }).p;
+    if (startPage === 1 && N > 2 && coverLike(pages[0])) startPage = 2;
+  }
+
   // pass 3: images (crop from a rendered page) — scanned pages become whole-page images
   onStep(2, 0);
   const images = []; let imgN = 0;
-  const imgPages = pages.filter(pg => scanned ? true : pg.rects.some(r => (r.x1 - r.x0) * (r.y1 - r.y0) > 2500 && !((r.x1 - r.x0) > pg.W * 0.95 && (r.y1 - r.y0) > pg.H * 0.95 && pg.chars > 200)));
+  const imgPages = pages.filter(pg => pg.p >= startPage && (scanned ? true : pg.rects.some(r => (r.x1 - r.x0) * (r.y1 - r.y0) > 2500 && !((r.x1 - r.x0) > pg.W * 0.95 && (r.y1 - r.y0) > pg.H * 0.95 && pg.chars > 200))));
   for (let k = 0; k < imgPages.length; k++) {
     const pg = imgPages[k];
     try {
@@ -247,6 +292,7 @@ export async function convertPdf(file, onStep = () => { }) {
     return a + ' ' + b;
   };
   for (const pg of pages) {
+    if (pg.p < startPage) continue;
     const lab = label(pg.p);
     const items = [...pg.lines.map(l => ({ ...l, t: 'line' })), ...(pg.items || [])];
     if (pg.items && pg.items.length && pg.lines.length) items.sort((a, b) => (a.col || 0) - (b.col || 0) || a.y - b.y);
@@ -267,7 +313,7 @@ export async function convertPdf(file, onStep = () => { }) {
       if (!newBlock && prev) {
         const gap = it.y - prev.y;
         if (prev.col !== it.col) newBlock = false;
-        else if (gap > lineGap * 1.45 || gap < -lineGap * 0.5) newBlock = true;
+        else if (kind === 'h' ? (gap > it.size * 1.8 || gap < 0) : (gap > lineGap * 1.45 || gap < -lineGap * 0.5)) newBlock = true;
         else if (kind !== 'h' && it.x - left0 > body * 0.9 && it.x - prev.x > body * 0.7) newBlock = true; // indented first line
         else if (kind !== 'h' && ends.test(prev.text) && prev.xEnd < right0 - body * 3) newBlock = true; // short last line
         if (kind === 'h' && Math.abs(it.size - para.size) > 0.6) newBlock = true;
@@ -303,47 +349,40 @@ export async function convertPdf(file, onStep = () => { }) {
   // sentences
   blocks.forEach(b => { if (b.t === 'p') b.s = splitSentences(b.x, lang); delete b.size; });
 
-  // chapters: from the PDF's own outline if it has one, otherwise from big headings
-  let toc = [];
-  try {
-    const outline = await pdf.getOutline();
-    if (outline && outline.length) {
-      const pageOf = async dest => {
-        try {
-          if (typeof dest === 'string') dest = await pdf.getDestination(dest);
-          if (!dest) return null; const ref = dest[0];
-          return typeof ref === 'number' ? ref + 1 : (await pdf.getPageIndex(ref)) + 1;
-        } catch (e) { return null; }
-      };
-      const tops = outline.length >= 3 ? outline : outline.flatMap(o => o.items && o.items.length ? o.items : [o]);
-      for (const o of tops) { const p = await pageOf(o.dest); if (p) toc.push({ title: clean(o.title || '').trim(), n: p }); }
-      toc = toc.filter(t => t.title).sort((a, b) => a.n - b.n);
-      // map to blocks: first block at/after the marker of that page
-      toc.forEach((t, ti) => {
-        let i = blocks.findIndex(b => b.t === 'pg' && b.n >= t.n); if (i < 0) i = blocks.length - 1;
-        const want = normKey(t.title); let found = -1;
-        for (let j = i; j < Math.min(blocks.length, i + 6); j++) if (want && blocks[j].t !== 'pg' && blocks[j].x && normKey(blocks[j].x).startsWith(want.slice(0, 20))) { found = j; break; }
-        if (found >= 0) { const b = blocks[found]; if (b.t !== 'h') { b.t = 'h'; delete b.s; } b.lv = 1; b.toc = ti + 1; }
-        else t.ins = i + 1;
-        t.id = ti + 1;
-      });
-      // insert missing headings back-to-front so indexes stay valid
-      [...toc].filter(t => t.ins !== undefined).sort((a, b) => b.ins - a.ins).forEach(t => { blocks.splice(t.ins, 0, { t: 'h', lv: 1, x: t.title, p: label(t.n), toc: t.id }); });
-      toc.forEach(t => { t.b = blocks.findIndex(b => b.toc === t.id); delete t.id; });
-      toc = toc.filter(t => t.b >= 0);
-    }
-  } catch (e) { toc = []; }
+  // chapters + contents: from the PDF's outline if it has one, otherwise from headings
+  let toc = [], contents = [];
+  const entries = outline.filter(o => o.n >= startPage && !isFront(o.title));
+  if (entries.filter(o => o.lv === 1).length >= 1 && entries.length >= 2) {
+    entries.forEach((t, ti) => {
+      let i = blocks.findIndex(b => b.t === 'pg' && b.n >= t.n); if (i < 0) i = blocks.length - 1;
+      const want = normKey(t.title); let found = -1;
+      for (let j = i; j < Math.min(blocks.length, i + 8); j++) { const bj = blocks[j]; if (want && bj.t !== 'pg' && bj.x && !bj.toc && (normKey(bj.x).startsWith(want.slice(0, 20)) || want.startsWith(normKey(bj.x).slice(0, 20)) && normKey(bj.x).length > 3)) { found = j; break; } }
+      if (found >= 0) { const b = blocks[found]; if (b.t !== 'h') { b.t = 'h'; delete b.s; } b.lv = t.lv; b.toc = ti + 1; }
+      else t.ins = i + 1;
+      t.id = ti + 1;
+    });
+    [...entries].filter(t => t.ins !== undefined).sort((a, b) => b.ins - a.ins || b.id - a.id).forEach(t => { blocks.splice(t.ins, 0, { t: 'h', lv: t.lv, x: t.title, p: label(t.n), toc: t.id }); });
+    entries.forEach(t => { t.b = blocks.findIndex(b => b.toc === t.id); });
+    contents = entries.filter(t => t.b >= 0).map(t => ({ title: t.title, b: t.b, lv: t.lv }));
+    toc = contents.filter(t => t.lv === 1);
+  }
   if (!toc.length) {
     let lv1 = blocks.map((b, i) => [b, i]).filter(([b]) => b.t === 'h' && b.lv === 1);
     if (lv1.length < 2) lv1 = blocks.map((b, i) => [b, i]).filter(([b]) => b.t === 'h');
-    if (lv1.length >= 2 && lv1.length < 200) toc = lv1.map(([b, i]) => ({ title: b.x, b: i }));
+    if (lv1.length >= 2 && lv1.length < 200) {
+      toc = lv1.map(([b, i]) => ({ title: b.x, b: i, lv: 1 }));
+      const lv2 = blocks.map((b, i) => [b, i]).filter(([b]) => b.t === 'h' && b.lv === 2);
+      contents = (lv1.length && lv2.length && lv2.length < 300 && lv1[0][0].lv === 1) ? [...toc, ...lv2.map(([b, i]) => ({ title: b.x, b: i, lv: 2 }))].sort((a, b) => a.b - b.b) : toc.slice();
+    }
   }
   if (!toc.length) {
     // no structure at all: sections every ~20 pages
     const marks = blocks.map((b, i) => [b, i]).filter(([b]) => b.t === 'pg');
-    for (let k = 0; k < marks.length; k += 20) { const [b, i] = marks[k]; const last = marks[Math.min(marks.length - 1, k + 19)][0]; toc.push({ title: `Pages ${b.p}–${last.p}`, b: i }); }
+    for (let k = 0; k < marks.length; k += 20) { const [b, i] = marks[k]; const last = marks[Math.min(marks.length - 1, k + 19)][0]; toc.push({ title: `Pages ${b.p}–${last.p}`, b: i, lv: 1 }); }
+    contents = toc.slice();
   }
-  toc.forEach(t => { t.p = (blocks.slice(0, t.b + 1).reverse().find(x => x.t === 'pg') || { p: '1' }).p; delete t.ins; delete t.n; });
+  const pAt = i => (blocks.slice(0, i + 1).reverse().find(x => x.t === 'pg') || { p: '1' }).p;
+  toc.forEach(t => { t.p = pAt(t.b); }); contents.forEach(t => { t.p = pAt(t.b); });
   blocks.forEach(b => { if (b.t !== 'pg') delete b.n; delete b.toc; });
 
   // title / author
@@ -352,5 +391,5 @@ export async function convertPdf(file, onStep = () => { }) {
   let author = (meta.Author || '').trim(); if (author.length > 80 || /^(anonymous|unknown|user|admin|owner|author)$/i.test(author)) author = '';
   onStep(3, 1);
   try { await pdf.destroy(); } catch (e) { }
-  return { title, author, pageCount: N, lang, scanned, coverBlob, coverRatio, pdfBlob, blocks, toc, images, words: blocks.reduce((n, b) => n + (b.x ? b.x.split(/\s+/).length : 0), 0) };
+  return { title, author, pageCount: N, lang, scanned, coverBlob, coverRatio, pdfBlob, blocks, toc, contents, startPage, images, words: blocks.reduce((n, b) => n + (b.x ? b.x.split(/\s+/).length : 0), 0) };
 }

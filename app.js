@@ -55,14 +55,30 @@ function back() {
   ENTER[pv.id] && ENTER[pv.id]({ back: true }); miniPos();
 }
 function tabTo(id) {
-  if (cur() === id && stack.length === 1) return;
+  if (cur() === id && stack.length === 1) { const b = $('#' + id + ' .body'); if (b) b.scrollTo({ top: 0, behavior: RM ? 'auto' : 'smooth' }); return; }
   [...stack].reverse().forEach(s => LEAVE[s] && s !== id && LEAVE[s]());
-  $$('.screen').forEach(s => s.classList.remove('on', 'under')); stack = [id];
-  const nx = $('#' + id); ENTER[id] && ENTER[id]({}); nx.classList.add('fade', 'on');
-  requestAnimationFrame(() => requestAnimationFrame(() => nx.classList.remove('fade'))); miniPos();
+  const old = $('#' + stack[0]); stack.forEach(s => s !== stack[0] && $('#' + s).classList.remove('on', 'under'));
+  stack = [id]; syncTabs();
+  const nx = $('#' + id); ENTER[id] && ENTER[id]({});
+  nx.style.transition = 'none'; nx.classList.remove('under'); nx.classList.add('on'); nx.style.zIndex = 2; void nx.offsetWidth; nx.style.transition = '';
+  const done = () => { if (stack[0] !== old.id) old.classList.remove('on', 'under'); old.getAnimations().forEach(a => a.cancel()); nx.getAnimations().forEach(a => a.cancel()); nx.style.zIndex = ''; };
+  if (RM || !nx.animate) { done(); miniPos(); return; }
+  // calm crossfade: the old page dims away, the new one rises in a few pixels
+  old.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: 'ease-out', fill: 'forwards' });
+  const a = nx.animate([{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }], { duration: 300, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' });
+  a.onfinish = done; miniPos();
 }
-function resetTo(id, o = {}) { [...stack].reverse().forEach(s => s !== id && LEAVE[s] && LEAVE[s]()); $$('.screen').forEach(s => s.classList.remove('on', 'under')); stack = [id]; $('#' + id).classList.add('on'); ENTER[id] && ENTER[id](o); miniPos(); }
-$$('.tabs').forEach(n => { n.innerHTML = [['library', 'book', 'Library'], ['knowledge', 'layers', 'Knowledge'], ['journal', 'chart', 'Journal']].map(([id, i, l]) => `<button class="tab ${n.dataset.tab === id ? 'on' : ''}" data-tabto="${id}">${ic(i, 16)}${l}</button>`).join(''); });
+function resetTo(id, o = {}) { [...stack].reverse().forEach(s => s !== id && LEAVE[s] && LEAVE[s]()); $$('.screen').forEach(s => s.classList.remove('on', 'under')); stack = [id]; $('#' + id).classList.add('on'); ENTER[id] && ENTER[id](o); syncTabs(true); miniPos(); }
+// one shared tab bar; the black pill slides between tabs
+const ROOTS = ['library', 'knowledge', 'journal'];
+$('#tabbar').insertAdjacentHTML('beforeend', [['library', 'book', 'Library'], ['knowledge', 'layers', 'Knowledge'], ['journal', 'chart', 'Journal']].map(([id, i, l]) => `<button class="tab" data-tabto="${id}">${ic(i, 16)}${l}</button>`).join(''));
+function syncTabs(instant) {
+  const root = stack[0]; const pill = $('#tabpill'); const btn = $(`#tabbar [data-tabto="${root}"]`); if (!btn) return;
+  $$('#tabbar .tab').forEach(t => t.classList.toggle('on', t === btn));
+  pill.classList.toggle('instant', !!instant); pill.style.width = btn.offsetWidth + 'px'; pill.style.transform = `translateX(${btn.offsetLeft}px)`;
+  if (instant) requestAnimationFrame(() => requestAnimationFrame(() => pill.classList.remove('instant')));
+}
+addEventListener('resize', () => syncTabs(true));
 ph.addEventListener('click', e => {
   const b = e.target.closest('[data-back]'); if (b) { if (b.closest('.sheet,.dialog')) { closeSheet(); closeDialog(); } back(); return; }
   const g = e.target.closest('[data-go]'); if (g) { go(g.dataset.go); return; }
@@ -251,10 +267,10 @@ async function convertOne(file, i, n) {
   const chapters = res.toc.length, imgs = res.images.length;
   info[0] = `${res.pageCount} pages${res.scanned ? ' · scanned' : ''}`; info[1] = 'done'; info[2] = imgs ? `${imgs} image${imgs > 1 ? 's' : ''}` : 'no images'; info[3] = `${chapters} section${chapters === 1 ? '' : 's'}` + (res.lang === 'ja' || res.scanned ? '' : ` · ${res.words.toLocaleString('en')} words`);
   // save everything
-  const book = { id, title: res.title, author: res.author, pageCount: res.pageCount, lang: res.lang, scanned: res.scanned, added: Date.now(), status: 'want', rating: 0, review: '', pos: null, pct: 0, lastRead: 0, readSec: 0, fileName: file.name, fileSize: file.size, imgKeys: res.images.map(x => x.key), words: res.words, chapters };
+  const book = { id, title: res.title, author: res.author, pageCount: res.pageCount, lang: res.lang, scanned: res.scanned, added: Date.now(), status: 'want', rating: 0, review: '', pos: null, pct: 0, lastRead: 0, readSec: 0, fileName: file.name, fileSize: file.size, imgKeys: res.images.map(x => x.key), words: res.words, chapters, cv: CONV };
   try {
     await db.putMany('files', [[res.coverBlob, 'cover:' + id], [res.pdfBlob, 'pdf:' + id], ...res.images.map(x => [x.blob, 'img:' + id + ':' + x.key])]);
-    await db.put('content', { blocks: res.blocks, toc: res.toc }, id);
+    await db.put('content', { blocks: res.blocks, toc: res.toc, contents: res.contents }, id);
     await saveBook(book); BOOKS.push(book);
   } catch (e) {
     console.error(e); $('#mkTitle').textContent = 'Not enough space'; $('#mkNote').textContent = 'Your phone ran out of room for this book.'; goB.disabled = false; goB.innerHTML = 'Back to library'; goB.onclick = () => resetTo('library'); return null;
@@ -323,7 +339,12 @@ function blockHTML(b, i, ja) {
   if (b.t === 'p') { const ss = b.s && b.s.length ? b.s : [b.x]; return `<p data-b="${i}"${b.sm ? ' class="sm"' : ''}>` + ss.map((s, k) => { const key = i + '.' + k; const m = MARKS.get(key); return `<span class="s${m ? ' hl hl-' + m.color : ''}" data-s="${key}">${esc(s)}</span>${m && m.note ? '<i class="pm"></i>' : ''}`; }).join(ja ? '' : ' ') + '</p>'; }
   return '';
 }
-function rangeHTML(from, to) { let h = ''; const bl = RC.blocks, ja = RB.lang === 'ja'; for (let i = from; i < to && i < bl.length; i++) h += blockHTML(bl[i], i, ja); return h; }
+function contentsHTML() {
+  const list = (RC.contents && RC.contents.length ? RC.contents : RC.toc) || [];
+  if (list.length < 2) return '';
+  return `<nav class="bc" aria-label="Contents"><div class="bc-h">Contents</div><div class="bc-sub">TAP A CHAPTER TO JUMP TO IT</div>${list.map(e => `<button class="bc-i ${e.lv === 2 ? 'lv2' : ''}" data-jb="${e.b}"><span>${esc(e.title)}</span><span>${esc(e.p || '')}</span></button>`).join('')}</nav>`;
+}
+function rangeHTML(from, to) { let h = from === 0 && !RB.scanned ? contentsHTML() : ''; const bl = RC.blocks, ja = RB.lang === 'ja'; for (let i = from; i < to && i < bl.length; i++) h += blockHTML(bl[i], i, ja); return h; }
 function lazyImages(root) {
   if (!imgObs) imgObs = new IntersectionObserver(es => es.forEach(async e => { if (!e.isIntersecting) return; const img = e.target; imgObs.unobserve(img); const blob = await db.get('files', 'img:' + RB.id + ':' + img.dataset.k); if (blob) { const u = URL.createObjectURL(blob); imgURLs.push(u); img.src = u; img.style.background = 'none'; } }), { root: null, rootMargin: '800px 0px' });
   $$('img[data-k]', root).forEach(i => { if (!i.src) imgObs.observe(i); });
@@ -336,8 +357,37 @@ function applyLook() {
   R.classList.toggle('dark', S.theme === 'dark');
   document.querySelector('meta[name=theme-color]').content = cur() === 'reader' ? th[1] : '#ffffff';
 }
+const CONV = 2; // conversion version — older books are rebuilt once with the newer converter
+let rebuilding = false;
+async function rebuildBook(b) {
+  if ((b.cv || 1) >= CONV || rebuilding) return;
+  rebuilding = true; const t = toast('Tidying this book — skipping the front pages…', { ms: 60000 });
+  try {
+    const blob = await db.get('files', 'pdf:' + b.id); if (!blob) return;
+    const { convertPdf } = await import('./convert.js');
+    const res = await convertPdf(new File([blob], b.fileName || 'book.pdf', { type: 'application/pdf' }));
+    await db.delMany('files', (b.imgKeys || []).map(k => 'img:' + b.id + ':' + k));
+    if (res.images.length) await db.putMany('files', res.images.map(x => [x.blob, 'img:' + b.id + ':' + x.key]));
+    await db.put('content', { blocks: res.blocks, toc: res.toc, contents: res.contents }, b.id);
+    // carry highlights and bookmarks over by their text / page
+    const sents = []; let pg = '1'; const firstOfPage = {};
+    res.blocks.forEach((bl, i) => { if (bl.t === 'pg') { pg = bl.p; if (!(pg in firstOfPage)) firstOfPage[pg] = i; } if (bl.t === 'p') (bl.s && bl.s.length ? bl.s : [bl.x]).forEach((s, k) => sents.push({ key: i + '.' + k, b: i, x: s })); });
+    const old = await db.byBook(b.id); const put = [], del = [];
+    for (const m of old) {
+      del.push(m.id);
+      if (m.kind === 'hl') { const s = sents.find(x => x.x === m.text) || sents.find(x => x.x.includes(m.text.slice(0, 60))); if (s) put.push({ ...m, key: s.key, b: s.b, id: b.id + ':' + s.key }); }
+      else if (m.kind === 'bm') { const i = firstOfPage[m.page]; if (i !== undefined) put.push({ ...m, b: i }); }
+    }
+    if (del.length) await db.delMany('marks', del); if (put.length) await db.putMany('marks', put.map(m => [m]));
+    if (b.pos) { const i = firstOfPage[b.pos.page]; b.pos = i === undefined ? null : { b: i, page: b.pos.page }; }
+    Object.assign(b, { cv: CONV, imgKeys: res.images.map(x => x.key), chapters: res.toc.length, words: res.words });
+    await saveBook(b); contentCache.delete(b.id);
+  } catch (e) { console.warn('rebuild failed', e); b.cv = CONV; await saveBook(b); }
+  finally { rebuilding = false; t.classList.remove('on'); }
+}
 async function openBook(id, bk, o = {}) {
   curBook = id; const b = bookById(id); if (!b) return;
+  if ((b.cv || 1) < CONV) await rebuildBook(b);
   RC = await getContent(id); RB = b;
   if (!RC) { toast('This book’s pages are missing', { low: true }); return; }
   MARKS = new Map(); BMS = [];
@@ -395,8 +445,15 @@ function renderReader() {
   lazyImages(bt);
 }
 let progScroll = 0;
+function jumpTo(i) {
+  hideQ(); if (pageMode) buildPages(i); else scrollToBlock(i);
+  const el = (pageMode ? $('#cols') : bt).querySelector(`[data-b="${i}"]`);
+  if (el && /^H/.test(el.tagName)) { el.classList.remove('jumped'); void el.offsetWidth; el.classList.add('jumped'); }
+  setTimeout(() => updateProgress(true), 150);
+}
 function scrollToBlock(i, smooth) {
   progScroll = Date.now();
+  if (i <= 0) { rs.scrollTop = 0; return; }
   const el = bt.querySelector(`[data-b="${i}"]`); if (!el) { rs.scrollTop = 0; return; }
   const y = Math.max(0, el.offsetTop - 8);
   if (smooth && !RM) rs.scrollTo({ top: y, behavior: 'smooth' }); else rs.scrollTop = y;
@@ -409,7 +466,7 @@ function topBlock() {
   // fallback: binary search by offsetTop
   const els = $$('[data-b]', bt); const st = rs.scrollTop; let best = 0; for (const e of els) { if (e.offsetTop <= st + 20) best = +e.dataset.b; else break; } return best;
 }
-function chapterAt(i) { const t = RC.toc; let c = null, k = -1; t.forEach((x, j) => { if (x.b <= i) { c = x; k = j; } }); return { c, k, next: t[k + 1] }; }
+function chapterAt(i) { if (RC.blocks[i] && RC.blocks[i].t === 'pg' && RC.blocks[i + 1] && RC.blocks[i + 1].t === 'h') i++; const t = RC.toc; let c = null, k = -1; t.forEach((x, j) => { if (x.b <= i) { c = x; k = j; } }); return { c, k, next: t[k + 1] }; }
 function updateProgress(save = true) {
   if (!RB) return;
   const i = topBlock(); const p = pageOf[i] || '1';
@@ -461,6 +518,7 @@ function readerClick(e) {
   if (lpFired) { lpFired = false; return; }
   if ($('#qbar').classList.contains('on')) { hideQ(); return; }
   const pd = e.target.closest('.pdiv'); if (pd) { originalPage(+pd.dataset.pg, pd.textContent); return; }
+  const jb = e.target.closest('.bc [data-jb]'); if (jb) { jumpTo(+jb.dataset.jb); return; }
   const s = e.target.closest('.s'); if (s && MARKS.has(s.dataset.s)) { selectS(s.dataset.s, s, true); return; }
   if (pageMode) { const pr = $('#pmode').getBoundingClientRect(); const rx = (e.clientX - pr.left) / pr.width; if (rx > .62) turn(1); else if (rx < .3) turn(-1); return; }
   const pr = ph.getBoundingClientRect(); const relY = (e.clientY - pr.top) / pr.height;
@@ -589,7 +647,7 @@ $('#tContents').onclick = () => {
     const ch = () => RC.toc.length ? RC.toc.map((t, k) => { const nx = RC.toc[k + 1]; const here = i >= t.b && (!nx || i < nx.b); const done = nx && i >= nx.b; return `<button class="row" data-jb="${t.b}" style="min-height:${here ? 64 : 52}px;padding:8px 12px;${here ? 'background:#111;color:#fff;border:0' : ''};${done ? 'color:var(--g)' : ''}"><span style="display:flex;gap:12px;align-items:baseline;text-align:left;min-width:0"><span class="dot" style="font-size:16px;width:22px;flex:none">${k + 1}</span><span>${esc(t.title)}${here ? `<br><span class="mono" style="font-size:10px;color:#CFCFCA">You’re here · p. ${esc(pageOf[i])}</span>` : ''}</span></span><span class="mono" style="font-size:12px;flex:none">${done ? '✓ ' : ''}${esc(t.p)}</span></button>`; }).join('') : '<p class="muted small">This PDF has no chapters we could find.</p>';
     const bm = () => BMS.length ? [...BMS].sort((x, y) => x.b - y.b).map(m => `<div class="row" style="height:52px"><button data-jb="${m.b}" style="display:flex;gap:12px;align-items:center;flex:1;height:100%;text-align:left"><svg width="12" height="20" viewBox="0 0 12 20"><path d="M0 0h12v19l-6-5-6 5z" fill="#111"/></svg><span>Page ${esc(m.page)}<span class="muted small"> · ${esc(m.ch)}</span></span></button><button data-delbm="${esc(m.id)}" aria-label="Remove bookmark" style="padding:8px">${ic('close', 16)}</button></div>`).join('') : '<p class="muted small" style="line-height:20px">No bookmarks yet. Tap the bookmark button at the top while reading.</p>';
     const L = $('#cL', b);
-    const wire = () => { $$('[data-jb]', L).forEach(r => r.onclick = () => { const t = +r.dataset.jb; closeSheet(); if (pageMode) buildPages(t); else scrollToBlock(t); setTimeout(() => updateProgress(true), 120); }); $$('[data-delbm]', L).forEach(x => x.onclick = async () => { const id = x.dataset.delbm; BMS = BMS.filter(m => m.id !== id); await db.del('marks', id); L.innerHTML = bm(); wire(); updateProgress(false); }); };
+    const wire = () => { $$('[data-jb]', L).forEach(r => r.onclick = () => { const t = +r.dataset.jb; closeSheet(); jumpTo(t); }); $$('[data-delbm]', L).forEach(x => x.onclick = async () => { const id = x.dataset.delbm; BMS = BMS.filter(m => m.id !== id); await db.del('marks', id); L.innerHTML = bm(); wire(); updateProgress(false); }); };
     L.innerHTML = ch(); wire();
     $$('#cT button', b).forEach((x, k) => x.onclick = () => { $$('#cT button', b).forEach(y => y.classList.toggle('on', y === x)); L.innerHTML = k ? bm() : ch(); wire(); });
   });
@@ -803,7 +861,7 @@ $('#backupIn').addEventListener('change', async e => {
   try { await loadBooks(); } catch (e) { console.error(e); toast('Storage is unavailable in this browser mode', { ms: 4000 }); }
   runSplash();
   await splashP;
-  ENTER.library({ first: true });
+  ENTER.library({ first: true }); syncTabs(true);
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) navigator.serviceWorker.register('sw.js').catch(() => { });
   window.__shiori = { db, BOOKS: () => BOOKS, S: () => S };
 })();

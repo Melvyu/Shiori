@@ -17,10 +17,10 @@
 <body>
 <div class="app" id="ph">
 
-<section class="screen on has-tabs" id="library">
+<section class="screen on has-tabs root" id="library">
  <div class="hd"><h1 class="t28">Library</h1><span class="sp"></span><button class="sq" data-go="search" aria-label="Search" data-i="search"></button><button class="sq" id="addBtn" aria-label="Add books" data-i="plus"></button></div>
  <div class="body"><div id="libTop"><button class="dd" id="showBtn"><span id="showLbl">All books</span><span data-i="down" data-s="14"></span></button></div><div class="grid" id="grid"></div><div id="libEmpty"></div></div>
- <nav class="tabs" data-tab="library"></nav>
+ 
 </section>
 
 <section class="screen" id="book">
@@ -49,12 +49,13 @@
  <button class="btn" id="mkGo" disabled style="margin-top:24px"></button>
  <div class="muted small" id="mkNote" style="margin-top:12px;text-align:center"></div></div></section>
 
-<section class="screen has-tabs" id="knowledge"><div class="hd"><h1 class="t28">Knowledge</h1><span class="sp"></span><button class="sq" id="kShare" data-i="share" aria-label="Export"></button></div><div class="body" id="kBody"></div><nav class="tabs" data-tab="knowledge"></nav></section>
+<section class="screen has-tabs root" id="knowledge"><div class="hd"><h1 class="t28">Knowledge</h1><span class="sp"></span><button class="sq" id="kShare" data-i="share" aria-label="Export"></button></div><div class="body" id="kBody"></div></section>
 
-<section class="screen has-tabs" id="journal"><div class="hd"><h1 class="t28">Journal</h1><span class="sp"></span><button class="sq" data-go="settings" data-i="gear" aria-label="Settings"></button></div><div class="body" id="jBody"></div><nav class="tabs" data-tab="journal"></nav></section>
+<section class="screen has-tabs root" id="journal"><div class="hd"><h1 class="t28">Journal</h1><span class="sp"></span><button class="sq" data-go="settings" data-i="gear" aria-label="Settings"></button></div><div class="body" id="jBody"></div></section>
 
 <section class="screen" id="settings"><div class="hd"><button class="sq" data-back data-i="back" aria-label="Back"></button><h2 class="t24">Settings</h2></div><div class="body" id="setBody"></div></section>
 
+<nav class="tabs" id="tabbar"><i class="tabpill" id="tabpill"></i></nav>
 <div class="dim" id="dim"></div>
 <div class="sheet" id="sheet" role="dialog"><div class="handle" id="handle"></div><div class="sc" id="sheetBody"></div></div>
 <div class="qbar" id="qbar"></div>
