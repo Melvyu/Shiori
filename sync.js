@@ -21,15 +21,23 @@ export async function disconnect() { await load(); Object.assign(st, { refresh: 
 const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 export async function startAuth() {
   await load(); if (!st.key) throw new Error('no key');
-  const v = b64u(crypto.getRandomValues(new Uint8Array(32)));
+  // reuse a pending sign-in, so a code from any earlier tap of Connect still works
+  const v = st.verifier || b64u(crypto.getRandomValues(new Uint8Array(32)));
   const ch = b64u(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v)));
-  st.verifier = v; await persist();
+  st.verifier = v; st.error = ''; await persist();
   return `${AUTH}?client_id=${encodeURIComponent(st.key)}&response_type=code&code_challenge=${ch}&code_challenge_method=S256&token_access_type=offline`;
 }
 export async function finishAuth(code) {
   await load();
-  const r = await fetch(TOKEN, { method: 'POST', body: new URLSearchParams({ grant_type: 'authorization_code', code: code.trim(), code_verifier: st.verifier || '', client_id: st.key }) });
-  if (!r.ok) throw new Error('That code didn’t work — try connecting again');
+  const clean = String(code).replace(/\s+/g, '');
+  let r; try { r = await fetch(TOKEN, { method: 'POST', body: new URLSearchParams({ grant_type: 'authorization_code', code: clean, code_verifier: st.verifier || '', client_id: st.key }) }); } catch (e) { throw new Error('Couldn’t reach Dropbox — check your connection and try again'); }
+  if (!r.ok) {
+    let d = ''; try { const j = await r.json(); d = `${j.error || ''} ${j.error_description || ''}`; } catch (e) { }
+    if (/verifier/i.test(d)) { delete st.verifier; await persist(); throw new Error('That code came from an older try — tap Start over and use the new code'); }
+    if (/expired|doesn.t exist|invalid_grant/i.test(d)) throw new Error('That code was already used or has expired — tap Connect Dropbox again for a new one');
+    if (/client|app/i.test(d)) throw new Error('Dropbox didn’t recognise the app — check the app key');
+    throw new Error('Dropbox didn’t accept that code — tap Connect Dropbox again');
+  }
   const j = await r.json();
   st.refresh = j.refresh_token; st.access = j.access_token; st.exp = Date.now() + ((j.expires_in || 14400) - 120) * 1000; delete st.verifier; st.error = '';
   try { const a = await api('users/get_current_account', null); st.email = a.email || ''; } catch (e) { }
