@@ -1073,7 +1073,7 @@ function chError(e, retry) {
 function chFollowup(r) {
   const metN = r.met.filter(Boolean).length;
   chSet(metN ? 'Almost there' : 'Not quite yet', `QUESTION ${CH.qi + 1} · ${metN} OF ${r.met.length} PARTS ALREADY THERE`);
-  $('#chBody').innerHTML = `${goalsHTML(r.met, CH.Q.goals)}<div class="ask"><div class="who"><i></i>SHIORI ASKS</div><p>${esc(r.followup || 'Which part of the idea is missing from your answer?')}</p></div>${rereadHTML(r)}<div class="lbl" style="margin:22px 0 0">Then add only the missing part — the rest of your answer stays</div><textarea class="chta short" id="chTa" placeholder="Add the missing part…"></textarea>${isExam() ? '' : passageLink()}<button class="link muted" data-ch="stuck" style="margin-top:14px;display:block;color:var(--g)">I’m stuck — show me an example</button>`;
+  $('#chBody').innerHTML = `${goalsHTML(r.met, CH.Q.goals)}<div class="ask"><div class="who"><i></i>SHIORI ASKS</div><p>${esc(r.followup || 'Which part of the idea is missing from your answer?')}</p></div>${rereadHTML(r)}<div class="lbl" style="margin:22px 0 0">Then add only the missing part — the rest of your answer stays</div><textarea class="chta short" id="chTa" placeholder="Add the missing part…"></textarea><button class="link muted" data-ch="stuck" style="margin-top:14px;display:block;color:var(--g)">I’m stuck — show me an example</button>`;
   const ta = $('#chTa');
   foot(`${ic('up', 16, '#fff')}Send`, () => { const v = ta.value.trim(); if (v) CH.adds.push(v); chReading(); }, true);
   ta.oninput = () => { $('#chGo').disabled = ta.value.trim().length < 3; };
@@ -1103,11 +1103,29 @@ async function chDone(showed) {
   await saveBook(RB);
   if (c.qi >= n) return isExam() ? chExamPassed() : chUnlock();
   chSet('Got it', `QUESTION ${CH.qi + 1} OF ${n} DONE`);
-  $('#chBody').innerHTML = `${qDots(n, c.qi, -1)}<div class="qdone"><div class="lbl" style="margin-bottom:4px">What you showed</div>${goalsHTML(c.done[CH.qi].showed.map(() => true), c.done[CH.qi].showed.length ? c.done[CH.qi].showed : CH.Q.goals)}</div><div class="lbl" style="margin:26px 0 6px">Up next${c.questions[c.qi].level === 'deeper' ? ' · a little harder' : ''}</div><p class="muted" style="font-size:15px;line-height:22px;margin:0">${esc(c.questions[c.qi].q)}</p>`;
+  $('#chBody').innerHTML = `${qDots(n, c.qi, -1)}<div class="qdone"><div class="lbl" style="margin-bottom:4px">What you showed</div>${goalsHTML(c.done[CH.qi].showed.map(() => true), c.done[CH.qi].showed.length ? c.done[CH.qi].showed : CH.Q.goals)}</div><div class="lbl" style="margin:26px 0 6px">Up next · question ${c.qi + 1}${c.questions[c.qi].level === 'deeper' ? ' · a little harder' : ''}</div><p class="muted" style="font-size:15px;line-height:22px;margin:0">${esc(c.questions[c.qi].q)}</p>`;
   const sqs = $$('#chBody .qdots i'); const s = sqs[CH.qi];
-  if (s && s.animate && !RM) s.animate([{ transform: 'scale(.4)' }, { transform: 'scale(1.35)' }, { transform: 'none' }], { duration: 380, easing: 'cubic-bezier(.34,1.56,.64,1)' });
+  if (s && s.animate && !RM) stampSquare(s);
   if (navigator.vibrate && !RM) navigator.vibrate(8);
   foot(`Question ${c.qi + 1} of ${n}`, nextQuestion);
+}
+
+// on-theme moments (Figma 11.9): square stamp, trophy build. The harder tag and highlighter sweep are CSS.
+function stampSquare(sq) {
+  sq.classList.remove('f'); sq.style.position = 'relative';
+  requestAnimationFrame(() => {
+    sq.classList.add('f');
+    sq.animate([{ transform: 'scale(.4)' }, { transform: 'scale(1.35)' }, { transform: 'none' }], { duration: 380, easing: 'cubic-bezier(.34,1.56,.64,1)' });
+    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([x, y]) => { const b = document.createElement('b'); b.className = 'qburst'; sq.appendChild(b); b.animate([{ transform: 'translate(-50%,-50%)', opacity: 1 }, { transform: `translate(calc(-50% + ${x * 14}px),calc(-50% + ${y * 14}px))`, opacity: 0 }], { duration: 420, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }).finished.then(() => b.remove()); });
+  });
+}
+async function buildTrophy(holder) {
+  const cells = $$('.plock i', holder), cols = BADGE[0].length, rows = BADGE.length;
+  const solid = cells.filter(c => c.style.background !== 'transparent');
+  solid.forEach(c => c.style.opacity = 0);
+  for (let r = rows - 1; r >= 0; r--) { for (let x = 0; x < cols; x++) { const c = cells[r * cols + x]; if (c) c.style.opacity = 1; } await sleep(40); }
+  const shine = cells.filter(c => c.style.background === 'rgb(255, 255, 255)' || c.style.background === '#fff');
+  shine.forEach(c => c.style.background = '#111'); await sleep(90); shine.forEach(c => c.style.background = '#fff');
 }
 function setMarkText(c) { return c.questions.map((q, i) => `${q.q}\n→ ${((c.done || [])[i] || {}).answer || ''}`.replace(/\n\nAdded: /g, ' ')).join('\n\n'); }
 const showedList = c => c.questions.map((q, i) => (((c.done || [])[i] || {}).showed || [])[0] || q.goals[0]);
@@ -1150,7 +1168,7 @@ async function chExamPassed() {
   chSet('', ''); $('#chFoot').innerHTML = '';
   $('#chBody').innerHTML = `<div class="unl"><div class="unl-stage" id="unlStage"><div id="unlLock">${pixHTML(BADGE, 9, '#111', '#fff')}</div></div><div id="unlText" style="opacity:0;width:100%"><div class="lbl" style="letter-spacing:.3em">Final exam passed</div><h3>You know this book</h3><div class="ct">${esc(b.title)}</div><div class="exstats"><div><b>${T}</b><span>CHAPTERS</span></div><div><b>${qs}</b><span>QUESTIONS</span></div><div><b>${b.learned >= T ? '100' : Math.round((b.learned || 0) / T * 100)}%</b><span>LEARNED</span></div></div><div class="shown"><div class="lbl" style="margin-bottom:4px">What you showed</div>${goalsHTML(showedList(c).map(() => true), showedList(c))}</div></div></div>`;
   const lock = $('#unlLock'), stage = $('#unlStage');
-  if (!RM && lock.animate) { if (navigator.vibrate) navigator.vibrate([10, 40, 14]); await lock.animate([{ transform: 'scale(.3) rotate(-12deg)', opacity: 0 }, { transform: 'scale(1.12) rotate(4deg)', opacity: 1 }, { transform: 'none' }], { duration: 560, easing: 'cubic-bezier(.34,1.56,.64,1)' }).finished; confetti(stage); setTimeout(() => confetti(stage), 350); }
+  if (!RM && lock.animate) { await buildTrophy(lock); if (navigator.vibrate) navigator.vibrate([10, 40, 14]); confetti(stage); setTimeout(() => confetti(stage), 350); }
   $('#unlText').animate ? $('#unlText').animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 320, fill: 'forwards', delay: RM ? 0 : 200 }) : ($('#unlText').style.opacity = 1);
   foot(`${ic('book', 16, '#fff')}Back to the book`, () => { CH = null; back(); setTimeout(() => { renderReader(); toEnd(); }, 60); });
 }
@@ -1191,7 +1209,7 @@ function rereadHTML(r) {
 }
 function rereadGo(b) {
   saveDraft(); CH = null; back();
-  setTimeout(() => { renderReader(); jumpTo(b); const el = (pageMode ? $('#cols') : bt).querySelector(`[data-b="${b}"]`); if (el && !/^H/.test(el.tagName)) { el.classList.remove('jumped'); void el.offsetWidth; el.classList.add('jumped'); } toast('Read this part, then come back to your question', { low: true, ms: 2600 }); }, 60);
+  setTimeout(() => { renderReader(); jumpTo(b); const el = (pageMode ? $('#cols') : bt).querySelector(`[data-b="${b}"]`); const p = el && /^H/.test(el.tagName) ? (el.nextElementSibling && el.nextElementSibling.tagName === 'P' ? el.nextElementSibling : null) : el; if (p) { p.classList.remove('jumped'); void p.offsetWidth; p.classList.add('jumped'); } toast('Read this part, then come back to your question', { low: true, ms: 2600 }); }, 60);
 }
 $('#chBody').addEventListener('click', e => { const rr = e.target.closest('[data-rr]'); if (rr) return rereadGo(+rr.dataset.rr); const a = e.target.closest('[data-ch]'); if (!a) return; if (a.dataset.ch === 'passage') passageSheet(); else if (a.dataset.ch === 'stuck') { CH.tries = Math.max(CH.tries, 3); saveDraft(); chStuck(); } });
 $('#chClose').onclick = () => { saveDraft(); CH = null; back(); setTimeout(refreshCard, 50); };

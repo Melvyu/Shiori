@@ -330,5 +330,14 @@ input,textarea{font:16px 'Hanken Grotesk',system-ui,sans-serif;color:var(--k);bo
 .reread .rr:first-of-type{border-top:0}
 .reread .rr small{display:block;font:500 9px 'Geist Mono',monospace;letter-spacing:.06em;color:var(--g)}.reread .rr b{display:block;font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rr-i{width:32px;height:32px;border:1px solid var(--k);display:grid;place-items:center;flex:none}.rr-go{font:500 10px 'Geist Mono',monospace;background:var(--k);color:#fff;padding:6px 8px;flex:none}.rr:active .rr-i{background:var(--so)}
-.bt p.jumped,.cols p.jumped{animation:pjumped 2.4s ease}
-@keyframes pjumped{0%,70%{background:var(--keyS)}100%{background:transparent}}
+/* highlighter sweep: the marker draws left → right, holds, then fades */
+.bt p.jumped,.cols p.jumped{position:relative}
+.bt p.jumped::after,.cols p.jumped::after{content:"";position:absolute;inset:-2px -4px;background:var(--keyS);mix-blend-mode:multiply;transform-origin:left center;pointer-events:none;animation:hlsweep 2.4s cubic-bezier(.4,0,.2,1) forwards}
+@keyframes hlsweep{0%{transform:scaleX(0);opacity:.6}21%{transform:scaleX(1);opacity:.6}38%{opacity:.6}100%{transform:scaleX(1);opacity:0}}
+/* "a little harder" types in with dot-matrix steps, then the question fades up */
+.qtag{animation:typein .24s steps(8) both}
+.chprompt.q .qtag+p{animation:qfade .3s .24s ease both}
+@keyframes typein{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+@keyframes qfade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.qburst{position:absolute;left:50%;top:50%;width:3px;height:3px;background:var(--k);display:block;pointer-events:none}
+@media (prefers-reduced-motion:reduce){.qtag,.chprompt.q .qtag+p,.bt p.jumped::after,.cols p.jumped::after{animation:none}.bt p.jumped::after,.cols p.jumped::after{opacity:0}}
