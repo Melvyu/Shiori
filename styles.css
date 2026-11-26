@@ -317,3 +317,18 @@ input,textarea{font:16px 'Hanken Grotesk',system-ui,sans-serif;color:var(--k);bo
 .choice .rad{width:20px;height:20px;border-radius:10px;border:1px solid #111;flex:none;display:grid;place-items:center}.choice.on .rad::after{content:"";width:10px;height:10px;border-radius:5px;background:#111}
 .choice .ib .plock,.plock{display:inline-grid;margin:0}
 .choice .ib .plock i{margin:0}
+/* chapter questions + final exam */
+.qdots{display:flex;gap:6px;align-items:center;margin:2px 0 14px}.qdots i{width:12px;height:12px;border:1.5px solid var(--k);display:block;flex:none}.qdots i.f{background:var(--k)}.qdots i.c{background:repeating-linear-gradient(90deg,var(--k) 0 3px,transparent 3px 6px)}
+.qdots span{font:500 9px 'Geist Mono',monospace;letter-spacing:.06em;color:var(--g);margin-left:6px}
+.chprompt.q{padding:16px}.chprompt.q p{font-size:17px;line-height:25px;color:#111}
+.qtag{display:inline-block;background:var(--k);color:#fff;font:500 9px 'Geist Mono',monospace;letter-spacing:.06em;padding:3px 6px;margin-bottom:10px}
+.qdone{background:var(--so);padding:12px 16px}
+.exstats{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--k);margin-top:18px;width:100%}.exstats div{padding:10px 4px;text-align:center;border-left:1px solid var(--k)}.exstats div:first-child{border-left:0}
+.exstats b{display:block;font:22px/26px 'DotGothic16',monospace}.exstats span{font:500 9px 'Geist Mono',monospace;letter-spacing:.06em;color:var(--g)}
+.reread{margin-top:18px;border:1px solid var(--k);padding:12px 14px}
+.reread .rr{display:flex;gap:12px;align-items:center;width:100%;text-align:left;padding:10px 0;border-top:1px solid var(--ln);margin-top:8px}
+.reread .rr:first-of-type{border-top:0}
+.reread .rr small{display:block;font:500 9px 'Geist Mono',monospace;letter-spacing:.06em;color:var(--g)}.reread .rr b{display:block;font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rr-i{width:32px;height:32px;border:1px solid var(--k);display:grid;place-items:center;flex:none}.rr-go{font:500 10px 'Geist Mono',monospace;background:var(--k);color:#fff;padding:6px 8px;flex:none}.rr:active .rr-i{background:var(--so)}
+.bt p.jumped,.cols p.jumped{animation:pjumped 2.4s ease}
+@keyframes pjumped{0%,70%{background:var(--keyS)}100%{background:transparent}}

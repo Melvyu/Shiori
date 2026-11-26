@@ -174,7 +174,7 @@ $('#showBtn').addEventListener('click', () => {
 });
 function bookMenu(id, tile) {
   const b = bookById(id); if (!b) return; const bk = tile && tile.querySelector ? tile.querySelector('.book') : null; bk && bk.classList.add('lift'); if (navigator.vibrate) navigator.vibrate(8);
-  sheet(`<div style="display:flex;gap:12px;align-items:center;margin:4px 0 16px"><div style="width:44px;flex:none">${bookEl(b)}</div><div style="min-width:0"><div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(b.title)}</div><div class="muted" style="font-size:12px">${STATUS[b.status]}${b.author ? ' · ' + esc(b.author) : ''}</div></div></div>${(b.chapters || 0) >= 3 && !b.scanned ? `<button class="row" data-a="study" style="justify-content:flex-start;gap:14px;min-height:72px;padding:10px 0;align-items:flex-start"><span style="margin-top:3px">${lockHTML('locked', 2, '#111')}</span><span style="flex:1;text-align:left">Chapter challenges<br><span class="muted" style="font-size:12px;line-height:17px">On: each chapter opens after its challenge. Off: read in any order; progress is kept.</span></span><span class="tog ${b.study ? 'on' : ''}" style="margin-top:4px"></span></button>` : ''}${[['play', 'Open book', 'open'], ['list', 'Change status', 'status'], ['edit', 'Edit title & author', 'edit'], ['image', 'Change cover', 'cover'], ['trash', 'Delete book', 'del']].map(([i, l, a]) => `<button class="row" data-a="${a}" style="justify-content:flex-start;gap:14px;height:52px${a === 'del' ? ';color:#B3261E' : ''}">${ic(i)}${l}</button>`).join('')}`, s => {
+  sheet(`<div style="display:flex;gap:12px;align-items:center;margin:4px 0 16px"><div style="width:44px;flex:none">${bookEl(b)}</div><div style="min-width:0"><div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(b.title)}</div><div class="muted" style="font-size:12px">${STATUS[b.status]}${b.author ? ' · ' + esc(b.author) : ''}</div></div></div>${(b.chapters || 0) >= 3 && !b.scanned ? `<button class="row" data-a="study" style="justify-content:flex-start;gap:14px;min-height:72px;padding:10px 0;align-items:flex-start"><span style="margin-top:3px">${lockHTML('locked', 2, '#111')}</span><span style="flex:1;text-align:left">Chapter challenges<br><span class="muted" style="font-size:12px;line-height:17px">On: each chapter opens after its 3 questions, with a final exam at the end. Off: read in any order; progress is kept.</span></span><span class="tog ${b.study ? 'on' : ''}" style="margin-top:4px"></span></button>` : ''}${[['play', 'Open book', 'open'], ['list', 'Change status', 'status'], ['edit', 'Edit title & author', 'edit'], ['image', 'Change cover', 'cover'], ['trash', 'Delete book', 'del']].map(([i, l, a]) => `<button class="row" data-a="${a}" style="justify-content:flex-start;gap:14px;height:52px${a === 'del' ? ';color:#B3261E' : ''}">${ic(i)}${l}</button>`).join('')}`, s => {
     fillCovers(s);
     $$('[data-a]', s).forEach(r => r.addEventListener('click', () => {
       const a = r.dataset.a;
@@ -347,7 +347,7 @@ ENTER.book = async () => {
   $('#bookBody').innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;text-align:center"><div style="width:120px" class="stag">${bookEl(b)}</div><h2 class="t24" style="margin-top:20px;line-height:1.15">${esc(b.title)}</h2><div class="muted" style="font-size:12px;margin-top:4px">${[b.author, b.pageCount + ' pages'].filter(Boolean).map(esc).join(' · ')}</div>
   <div style="display:flex;gap:16px;align-items:center;margin-top:16px"><button class="dd" id="bStatus"><i style="width:8px;height:8px;background:#111;display:block"></i>${STATUS[b.status]}${ic('down', 14)}</button><span style="display:flex;gap:4px" id="stars">${[0, 1, 2, 3, 4].map(i => `<button data-r="${i + 1}" aria-label="${i + 1} stars" style="padding:4px">${ic('star', 18, '#111', i < b.rating ? '#111' : 'none')}</button>`).join('')}</span></div></div>
   <div class="card" style="margin-top:24px;display:flex;flex-direction:column;gap:12px"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="muted" style="font-size:12px">${b.pos ? 'You’re on page' : 'Not started yet'}</div><div style="display:flex;gap:6px;align-items:baseline;margin-top:4px"><span class="dot" style="font-size:40px;line-height:1">${esc(page)}</span><span class="mono muted" style="font-size:12px">/ ${b.pageCount}</span></div></div><div style="text-align:right"><div class="mono muted" style="font-size:10px">Saved automatically</div><div class="mono" style="font-size:12px;margin-top:6px">${Math.round(pct * 100)}%</div></div></div>${pbar(30, Math.round(pct * 30))}</div>
-  ${b.study && (b.chapters || 0) >= 2 ? `<div style="display:flex;gap:10px;align-items:center;margin-top:12px">${lockHTML('open', 2, '#111')}${pbar(Math.min(30, b.chapters), Math.min(30, b.learned || 0))}<span class="mono muted" style="font-size:9px;letter-spacing:.04em;white-space:nowrap">${b.learned || 0} OF ${b.chapters} LEARNED</span></div>` : ''}
+  ${b.study && (b.chapters || 0) >= 2 ? `<div style="display:flex;gap:10px;align-items:center;margin-top:12px">${lockHTML('open', 2, '#111')}${pbar(Math.min(30, b.chapters), Math.min(30, b.learned || 0))}<span class="mono muted" style="font-size:9px;letter-spacing:.04em;white-space:nowrap">${Math.min(b.learned || 0, b.chapters)} OF ${b.chapters} LEARNED${b.examDone ? ' · EXAM PASSED' : ''}</span></div>` : ''}
   <button class="btn" id="contBtn" style="margin-top:16px">${ic('play', 16, '#fff')}${b.pos ? 'Continue reading' : 'Start reading'}</button>${b.scanned ? '' : `<div style="text-align:center;margin-top:12px"><button class="link" style="font-family:'Hanken Grotesk';font-size:13px" id="bListen">or listen instead</button></div>`}
   <div class="seg" style="margin-top:32px" id="bTabs"><button class="on" data-t="nb">NOTEBOOK ${marks.length}</button><button data-t="ch">CHAPTERS</button><button data-t="rv">REVIEW</button></div><div id="bTab" style="margin-top:8px"></div>`;
   fillCovers($('#bookBody'));
@@ -454,7 +454,7 @@ async function openBook(id, bk, o = {}) {
   if (b.status === 'want' || b.status === 'hold') { b.status = 'reading'; }
   if (b.study === undefined && RC.toc.length >= 3 && !b.scanned) { b.study = await askStudy(b); b.learned = b.learned || 0; await saveBook(b); bk = null; }
   let target = o.jump ?? (b.pos ? b.pos.b : 0);
-  if (studyOn() && target >= studyLimit()) { target = studyLimit() - 1; if (o.jump !== undefined) setTimeout(() => toast('That part opens after this chapter’s challenge', { low: true }), 900); }
+  if (studyOn() && target >= studyLimit()) { target = studyLimit() - 1; if (o.jump !== undefined) setTimeout(() => toast('That part opens after this chapter’s questions', { low: true }), 900); }
   const start = () => { go('reader', { fade: true, jump: target, flash: o.flash }); if (o.listen) setTimeout(openListen, 500); };
   if (!bk || RM || !bk.animate) { start(); return; }
   bookOpenAnim(bk, target, start);
@@ -749,7 +749,7 @@ function markNow(i) {
 function speakNext() {
   if (!playing) return; clearTimeout(lt); const my = ++gen;
   if (pi >= SENTS.length) { stopPlay(); toast('End of the book', { low: true }); return; }
-  if (SENTS[pi].b >= studyLimit()) { stopPlay(); toast('Answer this chapter’s challenge to keep listening', { low: true, ms: 2600 }); return; }
+  if (SENTS[pi].b >= studyLimit()) { stopPlay(); toast('Answer this chapter’s questions to keep listening', { low: true, ms: 2600 }); return; }
   const ja = LANG() === 'ja'; const b = SENTS[pi].b; const ids = []; for (let k = pi; k < SENTS.length && SENTS[k].b === b; k++) ids.push(k);
   let text = ''; const offs = []; ids.forEach(k => { offs.push(text.length); text += SENTS[k].x + (ja ? '' : ' '); });
   markNow(ids[0]); updMini();
@@ -939,35 +939,54 @@ function lockHTML(state = 'locked', px = 3, col = 'currentColor', inv = '#fff') 
   return `<span class="plock" aria-hidden="true" style="grid-template-columns:repeat(9,${px}px);grid-auto-rows:${px}px">${rows.map(r => [...r].map(ch => `<i style="background:${ch === '#' ? col : ch === 'w' ? inv : 'transparent'}"></i>`).join('')).join('')}</span>`;
 }
 function chapterText(k) { const a = RC.toc[k].b, z = RC.toc[k + 1] ? RC.toc[k + 1].b : RC.blocks.length; let t = ''; for (let i = a; i < z; i++) { const b = RC.blocks[i]; if (b.t === 'h') t += '\n## ' + b.x + '\n'; else if (b.t === 'p') t += b.x + '\n'; } return t.slice(0, 60000); }
+// Each chapter ends with 3 open questions about what it teaches (the 3rd a little harder). After the last chapter: a 5-question final exam.
+const EXAM = 'exam';
+const setOf = k => k === EXAM ? RB.exam : (RB.ch || {})[k];
+const isSet = c => !!(c && Array.isArray(c.questions) && c.questions.length);
+const czKey = () => (RB.learned || 0) >= RC.toc.length ? EXAM : (RB.learned || 0);
+const BADGE = ['###########', '#.###w###.#', '#.##www##.#', '.#.#####.#.', '..#######..', '...#####...', '....###....', '.....#.....', '.....#.....', '...#####...', '..#######..'];
+function pixHTML(rows, px, col = 'currentColor', inv = '#fff') { return `<span class="plock" aria-hidden="true" style="grid-template-columns:repeat(${rows[0].length},${px}px);grid-auto-rows:${px}px">${rows.map(r => [...r].map(ch => `<i style="background:${ch === '#' ? col : ch === 'w' ? inv : 'transparent'}"></i>`).join('')).join('')}</span>`; }
+const qDots = (n, done, cur = -1) => `<div class="qdots">${Array.from({ length: n }, (_, i) => `<i class="${i < done ? 'f' : i === cur ? 'c' : ''}"></i>`).join('')}<span>${done >= n ? 'ALL DONE' : `QUESTION ${Math.min(n, (cur < 0 ? done : cur) + 1)} OF ${n}`}</span></div>`;
 let czErr = null, genBusy = false, czObs = null;
-function cardInner(k) {
-  const c = (RB.ch || {})[k];
-  if (czErr && !c) return `<div class="cc-err">${esc(czErr.message)}</div><div style="display:flex;gap:8px"><button class="btn sm" data-cz="retry" style="height:40px;font-size:12px">Try again</button>${['nokey', 'badkey', 'credit'].includes(czErr.code) ? '<button class="btn sm sec" data-cz="settings" style="height:40px;font-size:12px">Open Settings</button>' : ''}</div><div class="cc-links"><button class="link" data-cz="off">Turn off challenges for this book</button></div>`;
-  if (!c) return `<div class="cc-load"><div class="cc-dots"><i></i><i></i><i></i></div><div class="cc-t">Writing your challenge…</div><div class="cc-s">Shiori is reading this chapter to find its main idea.</div></div>`;
-  return `<div class="cc-top"><span class="cc-chip"><i></i>${esc(c.type.toUpperCase())}</span><span class="cc-min">ABOUT ${c.minutes} MIN</span></div><div class="cc-title">${esc(c.title)}</div><div class="cc-prompt">${esc(c.prompt)}</div><button class="btn" data-cz="answer">${c.draft ? 'Keep going' : 'Answer'}</button>`;
+function cardInner(key) {
+  const c = setOf(key), ex = key === EXAM;
+  if (ex && RB.examDone) return `<div class="cc-top"><span class="cc-chip"><i></i>FINAL EXAM</span><span class="cc-min">PASSED</span></div><div style="display:flex;gap:14px;align-items:center;margin-top:12px">${pixHTML(BADGE, 4, '#111', '#fff')}<div><div class="cc-title" style="margin:0">You know this book</div><div class="muted small" style="margin-top:4px">Passed ${new Date(RB.examDone).toLocaleDateString()} · answers in your notebook</div></div></div>`;
+  if (czErr && !isSet(c)) return `<div class="cc-err">${esc(czErr.message)}</div><div style="display:flex;gap:8px"><button class="btn sm" data-cz="retry" style="height:40px;font-size:12px">Try again</button>${['nokey', 'badkey', 'credit'].includes(czErr.code) ? '<button class="btn sm sec" data-cz="settings" style="height:40px;font-size:12px">Open Settings</button>' : ''}</div><div class="cc-links"><button class="link" data-cz="off">Turn off challenges for this book</button></div>`;
+  if (!isSet(c)) return `<div class="cc-load"><div class="cc-dots"><i></i><i></i><i></i></div><div class="cc-t">${ex ? 'Writing your final exam…' : 'Writing your questions…'}</div><div class="cc-s">${ex ? 'Shiori is pulling together what every chapter taught.' : 'Shiori is reading this chapter to find what it teaches.'}</div></div>`;
+  const n = c.questions.length, qi = Math.min(c.qi || 0, n - 1), started = (c.qi || 0) > 0 || !!c.draft;
+  return `<div class="cc-top"><span class="cc-chip"><i></i>${ex ? 'FINAL EXAM' : 'CHAPTER ' + (key + 1) + ' CHECK'}</span><span class="cc-min">${n} QUESTIONS · ABOUT ${ex ? 12 : 6} MIN</span></div><div class="cc-title">${esc(c.title)}</div>${qDots(n, c.qi || 0, qi)}<div class="cc-prompt">${esc(c.questions[qi].q)}</div><button class="btn" data-cz="answer">${started ? `Keep going · ${qi + 1} of ${n}` : ex ? 'Start the exam' : 'Start'}</button>`;
 }
 function czHTML() {
   if (!studyOn()) return '';
-  const k = curChapter(); const nx = RC.toc[k + 1]; if (!nx) return '';
-  return `<section class="cz" id="cz" data-k="${k}"><div class="pdiv cz-end">END OF CHAPTER ${k + 1}</div><div class="ccard" id="ccard">${cardInner(k)}</div><div class="cnext">${lockHTML('locked', 3)}<span>OPENS NEXT · ${esc(nx.title.toUpperCase())}</span></div></section>`;
+  const L = RB.learned || 0, T = RC.toc.length;
+  if (L < T) { const nx = RC.toc[L + 1]; return `<section class="cz" id="cz" data-k="${L}"><div class="pdiv cz-end">END OF CHAPTER ${L + 1}</div><div class="ccard" id="ccard">${cardInner(L)}</div><div class="cnext">${lockHTML('locked', 3)}<span>OPENS NEXT · ${nx ? esc(nx.title.toUpperCase()) : 'THE FINAL EXAM'}</span></div></section>`; }
+  return `<section class="cz" id="cz" data-k="exam"><div class="pdiv cz-end">END OF THE BOOK</div><div class="ccard" id="ccard">${cardInner(EXAM)}</div>${RB.examDone ? '' : `<div class="cnext">${pixHTML(BADGE, 2, 'currentColor', 'var(--bg, #fff)')}<span>ALL ${T} CHAPTERS LEARNED · ONE LAST STEP</span></div>`}</section>`;
 }
 function watchCz() {
   if (czObs) czObs.disconnect();
-  czObs = new IntersectionObserver(es => es.forEach(e => { if (!e.isIntersecting) return; const cz = e.target; ensureChallenge(+cz.dataset.k); const r = e.boundingClientRect; if (r.top < innerHeight - 60 && r.left < innerWidth && r.right > 0) setTimeout(() => { const c = cz.querySelector('.ccard'); c && c.classList.add('dealt'); }, 120); }), { rootMargin: '1400px 0px 0px 0px', threshold: [0, 0.05, 0.3] });
+  czObs = new IntersectionObserver(es => es.forEach(e => { if (!e.isIntersecting) return; const cz = e.target; ensureChallenge(cz.dataset.k === EXAM ? EXAM : +cz.dataset.k); const r = e.boundingClientRect; if (r.top < innerHeight - 60 && r.left < innerWidth && r.right > 0) setTimeout(() => { const c = cz.querySelector('.ccard'); c && c.classList.add('dealt'); }, 120); }), { rootMargin: '1400px 0px 0px 0px', threshold: [0, 0.05, 0.3] });
   $$('#reader .cz').forEach(cz => czObs.observe(cz));
 }
-function refreshCard() { const k = curChapter(); $$('#reader #ccard').forEach(c => { c.innerHTML = cardInner(k); }); }
-async function ensureChallenge(k) {
-  if (!studyOn() || (RB.ch || {})[k] || genBusy) return;
-  genBusy = true; czErr = null; refreshCard(); const book = RB;
+function refreshCard() { if (!RB || !RC) return; const k = czKey(); $$('#reader #ccard').forEach(c => { c.innerHTML = cardInner(k); }); }
+const askedBefore = (b, upto) => Object.entries(b.ch || {}).filter(([i, c]) => +i < upto && isSet(c)).flatMap(([, c]) => c.questions.map(q => q.q));
+async function ensureChallenge(key) {
+  if (!studyOn() || isSet(setOf(key)) || genBusy || (key === EXAM && RB.examDone)) return;
+  genBusy = true; czErr = null; refreshCard(); const book = RB, rc = RC;
   try {
-    const c = await AI.makeChallenge({ book: book.title, chapter: RC.toc[k].title, text: chapterText(k) });
-    book.ch = { ...(book.ch || {}), [k]: { ...c, made: Date.now() } }; await saveBook(book);
+    if (key === EXAM) {
+      const chapters = rc.toc.map((t, i) => { const c = (book.ch || {})[i]; return { title: t.title, summary: (c && c.summary) || chapterText(i).slice(0, 2500) }; });
+      const c = await AI.makeExam({ book: book.title, chapters, asked: askedBefore(book, 1e9) });
+      book.exam = { ...c, qi: 0, done: [], made: Date.now() };
+    } else {
+      const c = await AI.makeChapterSet({ book: book.title, chapter: rc.toc[key].title, text: chapterText(key), prior: askedBefore(book, key) });
+      book.ch = { ...(book.ch || {}), [key]: { ...c, qi: 0, done: [], made: Date.now() } };
+    }
+    await saveBook(book);
   } catch (e) { czErr = e; }
   genBusy = false; if (RB === book) refreshCard();
 }
 function czAction(a) {
-  const k = curChapter();
+  const k = czKey();
   if (a === 'answer') openChallenge(k);
   else if (a === 'retry') { czErr = null; ensureChallenge(k); }
   else if (a === 'settings') go('settings');
@@ -978,13 +997,13 @@ async function setStudy(b, on) {
   if (cur() === 'reader' && RB === b) { const i = topBlock(); renderReader(); requestAnimationFrame(() => { if (pageMode) buildPages(i); else scrollToBlock(i); updateProgress(false); }); }
   toast(on ? 'Chapter challenges on' : 'Every chapter is open now', { low: true });
 }
-function lockedToast(el) { el && (el.classList.remove('wobble'), void el.offsetWidth, el.classList.add('wobble')); toast(`${lockHTML('locked', 2, '#fff', '#111')}<span>Answer chapter ${curChapter() + 1}’s challenge to open this</span>`, { low: true, ms: 2200 }); }
+function lockedToast(el) { el && (el.classList.remove('wobble'), void el.offsetWidth, el.classList.add('wobble')); toast(`${lockHTML('locked', 2, '#fff', '#111')}<span>Answer chapter ${curChapter() + 1}’s questions to open this</span>`, { low: true, ms: 2200 }); }
 function askStudy(b) {
   if (globalThis.__SHIORI_NOASK) return Promise.resolve(false);
   return new Promise(res => {
     let pick = true, done = false;
     sheet(`<h3 class="t24" style="margin:4px 0 6px">How will you use this book?</h3><p class="muted small" style="margin:0 0 4px;line-height:18px">Pick once for this book. You can change it in the book menu.</p>
-    <button class="choice on" data-st="1"><span class="ib">${lockHTML('locked', 3, 'currentColor', '#111')}</span><span style="flex:1"><b>Study it</b><span>Each chapter ends with one short challenge (1–3 min). Answer it in your own words to open the next one.</span><small>BEST FOR BOOKS YOU WANT TO LEARN</small></span><span class="rad"></span></button>
+    <button class="choice on" data-st="1"><span class="ib">${lockHTML('locked', 3, 'currentColor', '#111')}</span><span style="flex:1"><b>Study it</b><span>Each chapter ends with 3 open questions about what it teaches. Answer them in your own words to open the next one. A final exam closes the book.</span><small>BEST FOR BOOKS YOU WANT TO LEARN</small></span><span class="rad"></span></button>
     <button class="choice" data-st="0"><span class="ib">${ic('list', 20)}</span><span style="flex:1"><b>Reference</b><span>Every chapter stays open. Jump straight to the part you need.</span><small>BEST FOR LOOKING THINGS UP</small></span><span class="rad"></span></button>
     <button class="btn" id="stGo" style="margin-top:24px">${ic('book', 16, '#fff')}Start reading</button>`, s => {
       $$('.choice', s).forEach(c => c.onclick = () => { pick = c.dataset.st === '1'; $$('.choice', s).forEach(x => x.classList.toggle('on', x === c)); $('.choice[data-st="1"] .ib', s).innerHTML = lockHTML('locked', 3, 'currentColor', pick ? '#111' : '#F5F5F2'); });
@@ -993,40 +1012,54 @@ function askStudy(b) {
   });
 }
 
-// the challenge screen: answer → reading → (follow-up | stuck) → unlocked
+// the challenge screen, once per question: answer → reading → (follow-up | stuck) → done → next question … → unlocked / exam passed
 let CH = null;
 function openChallenge(k) {
-  const c = RB.ch[k]; CH = { k, c, answer: c.draft || '', adds: [], tries: c.tries || 0, met: c.met || [], last: null, simpleTries: 0 };
-  go('challenge'); chAnswer();
+  const c = setOf(k); if (!isSet(c)) return;
+  const qi = Math.min(c.qi || 0, c.questions.length - 1);
+  CH = { k, c, qi, Q: c.questions[qi], answer: c.draft || '', adds: c.adds || [], tries: c.tries || 0, met: c.met || [], last: c.lastR || null, simpleTries: 0, ex: null };
+  go('challenge');
+  if (CH.last && CH.tries >= 3) chStuck(); else if (CH.last && CH.tries > 0) chFollowup(CH.last); else chAnswer();
+}
+function nextQuestion() {
+  const c = CH.c; CH = { k: CH.k, c, qi: c.qi, Q: c.questions[c.qi], answer: '', adds: [], tries: 0, met: [], last: null, simpleTries: 0, ex: null };
+  chAnswer();
 }
 const chSet = (title, sub) => { $('#chTitle').textContent = title; $('#chSub').textContent = sub || ''; };
+const isExam = () => CH.k === EXAM;
+const whereLabel = () => isExam() ? 'FINAL EXAM' : 'CHAPTER ' + (CH.k + 1);
 const fullAnswer = () => [CH.answer, ...CH.adds].filter(Boolean).join('\n\nAdded: ');
-function saveDraft() { if (!CH) return; const c = RB.ch[CH.k]; c.draft = CH.answer; c.tries = CH.tries; c.met = CH.met; saveBook(RB); }
+function saveDraft() { if (!CH) return; const c = CH.c; c.draft = CH.answer; c.adds = CH.adds; c.tries = CH.tries; c.met = CH.met; c.lastR = CH.last; saveBook(RB); }
 function goalsHTML(met, goals) { return goals.map((g, i) => `<div class="goal ${met[i] ? '' : 'miss'}"><span class="bx">${met[i] ? ic('check', 12, '#fff') : ''}</span><span>${esc(g)}</span></div>`).join(''); }
-function passageLink() { return `<button class="link" data-ch="passage" style="margin-top:16px;display:block">Reopen the passage${CH.c.passagePage ? ' · p. ' + esc(CH.c.passagePage) : ''}</button>`; }
+function qContext(Q) { return (Q.chapters || []).map(n => { const c = (RB.ch || {})[n - 1]; return `Chapter ${n} (${RC.toc[n - 1] ? RC.toc[n - 1].title : ''}): ${(c && c.summary) || ''}`; }).join('\n'); }
+function aiQ() { return isExam() ? { ...CH.Q, context: qContext(CH.Q) } : CH.Q; }
+function passageLink() {
+  if (isExam()) return (CH.Q.chapters || []).length ? `<button class="link" data-ch="passage" style="margin-top:16px;display:block">Look back at chapter${CH.Q.chapters.length > 1 ? 's' : ''} ${CH.Q.chapters.join(' & ')}</button>` : '';
+  return `<button class="link" data-ch="passage" style="margin-top:16px;display:block">Reopen the passage${CH.Q.passagePage ? ' · p. ' + esc(CH.Q.passagePage) : ''}</button>`;
+}
 function foot(label, cb, disabled) { $('#chFoot').innerHTML = `<button class="btn" id="chGo" ${disabled ? 'disabled' : ''}>${label}</button>`; $('#chGo').onclick = cb; }
 function chAnswer() {
-  chSet('Your answer', `CHAPTER ${CH.k + 1} CHALLENGE · ${CH.c.type.toUpperCase()}`);
-  $('#chBody').innerHTML = `<div class="chprompt" id="chPr"><b>${esc(CH.c.title)}</b><p>${esc(CH.c.prompt)}</p><button class="link" id="chMore" style="margin-top:6px">Show all</button></div><textarea class="chta" id="chTa" placeholder="Write it in your own words…">${esc(CH.answer)}</textarea><p class="muted small" style="margin:12px 0 0;line-height:18px">Any answer that shows the idea works — use your own words. Your phone’s keyboard mic works here too.</p>`;
-  $('#chMore').onclick = () => { const p = $('#chPr'); p.classList.toggle('open'); $('#chMore').textContent = p.classList.contains('open') ? 'Show less' : 'Show all'; };
+  const n = CH.c.questions.length, hard = CH.Q.level === 'deeper';
+  chSet(`Question ${CH.qi + 1} of ${n}`, `${whereLabel()} · ${CH.c.title.toUpperCase()}`);
+  $('#chBody').innerHTML = `${qDots(n, CH.qi, CH.qi)}<div class="chprompt open q" id="chPr">${hard ? '<span class="qtag">A LITTLE HARDER</span>' : ''}<p style="margin:0">${esc(CH.Q.q)}</p></div><textarea class="chta" id="chTa" placeholder="Write it in your own words…">${esc(CH.answer)}</textarea><p class="muted small" style="margin:12px 0 0;line-height:18px">Explain your thinking — there’s more than one right answer. Your phone’s keyboard mic works here too.</p>`;
   const ta = $('#chTa'); const upd = () => { CH.answer = ta.value; $('#chGo').disabled = ta.value.trim().length < 8; };
   foot('Check my thinking', () => { CH.answer = ta.value.trim(); saveDraft(); chReading(); }, CH.answer.trim().length < 8);
   let tm; ta.oninput = () => { upd(); clearTimeout(tm); tm = setTimeout(saveDraft, 600); };
   setTimeout(() => { if (cur() === 'challenge') ta.focus(); }, 380);
 }
 async function chReading() {
-  chSet('Reading your answer…', '');
-  const n = CH.c.goals.length;
-  $('#chBody').innerHTML = `<div class="thinking"><div class="sqs">${CH.c.goals.map(() => '<i></i>').join('')}</div><div class="t24" style="margin-top:22px">Reading your answer…</div><p class="muted" style="font-size:14px;line-height:20px;max-width:290px">Checking it against the idea this chapter teaches — not against one right answer.</p></div>`;
+  chSet('Reading your answer…', `QUESTION ${CH.qi + 1} OF ${CH.c.questions.length}`);
+  const n = CH.Q.goals.length;
+  $('#chBody').innerHTML = `<div class="thinking"><div class="sqs">${CH.Q.goals.map(() => '<i></i>').join('')}</div><div class="t24" style="margin-top:22px">Reading your answer…</div><p class="muted" style="font-size:14px;line-height:20px;max-width:290px">Checking it against what ${isExam() ? 'the book' : 'this chapter'} teaches — not against one right answer.</p></div>`;
   $('#chFoot').innerHTML = '';
   let s = 0; const sq = $$('#chBody .sqs i'); const tick = setInterval(() => { sq.forEach(x => x.classList.remove('f')); sq[s % n] && sq[s % n].classList.add('f'); s++; }, 350);
   let r;
-  try { r = await AI.checkAnswer({ ch: CH.c, answer: fullAnswer() }); }
+  try { r = await AI.checkAnswer({ book: RB.title, where: isExam() ? 'Final exam for the whole book' : 'Chapter: ' + RC.toc[CH.k].title, q: aiQ(), answer: fullAnswer() }); }
   catch (e) { clearInterval(tick); return chError(e, chReading); }
   clearInterval(tick); if (cur() !== 'challenge' || !CH) return;
   CH.last = r; CH.met = r.met;
   sq.forEach((x, i) => x.classList.toggle('f', !!r.met[i])); await sleep(RM ? 0 : 450);
-  if (r.verdict === 'pass') return chUnlock(r.showed);
+  if (r.verdict === 'pass') return chDone(r.showed);
   CH.tries++; saveDraft();
   if (CH.tries >= 3) return chStuck();
   chFollowup(r);
@@ -1039,8 +1072,8 @@ function chError(e, retry) {
 }
 function chFollowup(r) {
   const metN = r.met.filter(Boolean).length;
-  chSet(metN ? 'Almost there' : 'Not quite yet', `${metN} OF ${r.met.length} PARTS ALREADY THERE`);
-  $('#chBody').innerHTML = `${goalsHTML(r.met, CH.c.goals)}<div class="ask"><div class="who"><i></i>SHIORI ASKS</div><p>${esc(r.followup || 'Which part of the chapter’s idea is missing from your answer?')}</p></div><div class="lbl" style="margin:22px 0 0">Only this part — the rest of your answer stays</div><textarea class="chta short" id="chTa" placeholder="Add the missing part…"></textarea>${passageLink()}<button class="link muted" data-ch="stuck" style="margin-top:14px;display:block;color:var(--g)">I’m stuck — show me an example</button>`;
+  chSet(metN ? 'Almost there' : 'Not quite yet', `QUESTION ${CH.qi + 1} · ${metN} OF ${r.met.length} PARTS ALREADY THERE`);
+  $('#chBody').innerHTML = `${goalsHTML(r.met, CH.Q.goals)}<div class="ask"><div class="who"><i></i>SHIORI ASKS</div><p>${esc(r.followup || 'Which part of the idea is missing from your answer?')}</p></div>${rereadHTML(r)}<div class="lbl" style="margin:22px 0 0">Then add only the missing part — the rest of your answer stays</div><textarea class="chta short" id="chTa" placeholder="Add the missing part…"></textarea>${isExam() ? '' : passageLink()}<button class="link muted" data-ch="stuck" style="margin-top:14px;display:block;color:var(--g)">I’m stuck — show me an example</button>`;
   const ta = $('#chTa');
   foot(`${ic('up', 16, '#fff')}Send`, () => { const v = ta.value.trim(); if (v) CH.adds.push(v); chReading(); }, true);
   ta.oninput = () => { $('#chGo').disabled = ta.value.trim().length < 3; };
@@ -1049,27 +1082,48 @@ function chFollowup(r) {
 async function chStuck() {
   chSet('Let’s work it out', 'A WORKED EXAMPLE, THEN ONE SMALL QUESTION');
   $('#chBody').innerHTML = `<div class="thinking" style="padding-top:16vh"><div class="cc-dots"><i></i><i></i><i></i></div><p class="muted" style="font-size:14px;margin-top:18px">Finding a good example…</p></div>`; $('#chFoot').innerHTML = '';
-  let ex; try { ex = CH.ex || (CH.ex = await AI.workedExample({ ch: CH.c, answer: fullAnswer(), met: CH.met.length ? CH.met : CH.c.goals.map(() => false) })); } catch (e) { return chError(e, chStuck); }
+  let ex; try { ex = CH.ex || (CH.ex = await AI.workedExample({ q: aiQ(), answer: fullAnswer(), met: CH.met.length ? CH.met : CH.Q.goals.map(() => false) })); } catch (e) { return chError(e, chStuck); }
   if (cur() !== 'challenge') return;
   $('#chBody').innerHTML = `<div class="ex"><div class="lbl">Same idea, different situation</div><p style="font-size:14px;line-height:20px;margin:8px 0 0">${esc(ex.setup)}</p>${ex.steps.map((s, i) => `<div class="step ${i === ex.missing ? 'hl' : ''}"><span class="n">${i + 1}</span><span><b>${esc(s.title)}</b><span>${esc(s.detail)}</span></span></div>`).join('')}<p class="muted small" style="margin:10px 0 0">Step ${ex.missing + 1} is the part your answer was missing.</p></div>
   <div class="lbl" style="margin:24px 0 6px">Your turn · one small question</div><p style="font-size:17px;line-height:24px;margin:0">${esc(ex.question)}</p><textarea class="chta short" id="chTa" placeholder="One sentence is enough"></textarea><div id="chNote"></div>${passageLink()}`;
   const ta = $('#chTa');
-  foot('Finish', async () => {
+  foot('Finish this question', async () => {
     const v = ta.value.trim(); if (!v) return; $('#chGo').disabled = true; CH.simpleTries++;
     let ok = CH.simpleTries >= 2;
-    if (!ok) { try { const r = await AI.checkSimple({ ch: CH.c, question: ex.question, answer: v }); ok = r.ok !== false; if (!ok) $('#chNote').innerHTML = `<p class="small" style="margin:10px 0 0;line-height:18px">${esc(r.note || 'Look at step ' + (ex.missing + 1) + ' again, then try once more.')}</p>`; } catch (e) { ok = true; } }
-    if (ok) { CH.adds.push(v); chUnlock(CH.last && CH.last.showed && CH.last.showed.length ? CH.last.showed : CH.c.goals); } else $('#chGo').disabled = false;
+    if (!ok) { try { const r = await AI.checkSimple({ q: CH.Q, question: ex.question, answer: v }); ok = r.ok !== false; if (!ok) $('#chNote').innerHTML = `<p class="small" style="margin:10px 0 0;line-height:18px">${esc(r.note || 'Look at step ' + (ex.missing + 1) + ' again, then try once more.')}</p>`; } catch (e) { ok = true; } }
+    if (ok) { CH.adds.push(v); chDone(CH.last && CH.last.showed && CH.last.showed.length ? CH.last.showed : CH.Q.goals); } else $('#chGo').disabled = false;
   }, true);
   ta.oninput = () => { $('#chGo').disabled = ta.value.trim().length < 3; };
 }
-async function chUnlock(showed) {
-  const k = CH.k, b = RB, c = b.ch[k]; const next = RC.toc[k + 1];
-  b.learned = Math.max(b.learned || 0, k + 1); Object.assign(c, { learned: Date.now(), answer: fullAnswer(), draft: '', showed });
+// one question answered → next question, or the whole set is done
+async function chDone(showed) {
+  const c = CH.c, n = c.questions.length;
+  c.done = c.done || []; c.done[CH.qi] = { answer: fullAnswer(), showed: (showed || []).filter(Boolean).slice(0, 3) };
+  c.draft = ''; c.adds = []; c.lastR = null; c.tries = 0; c.met = []; c.qi = CH.qi + 1;
+  await saveBook(RB);
+  if (c.qi >= n) return isExam() ? chExamPassed() : chUnlock();
+  chSet('Got it', `QUESTION ${CH.qi + 1} OF ${n} DONE`);
+  $('#chBody').innerHTML = `${qDots(n, c.qi, -1)}<div class="qdone"><div class="lbl" style="margin-bottom:4px">What you showed</div>${goalsHTML(c.done[CH.qi].showed.map(() => true), c.done[CH.qi].showed.length ? c.done[CH.qi].showed : CH.Q.goals)}</div><div class="lbl" style="margin:26px 0 6px">Up next${c.questions[c.qi].level === 'deeper' ? ' · a little harder' : ''}</div><p class="muted" style="font-size:15px;line-height:22px;margin:0">${esc(c.questions[c.qi].q)}</p>`;
+  const sqs = $$('#chBody .qdots i'); const s = sqs[CH.qi];
+  if (s && s.animate && !RM) s.animate([{ transform: 'scale(.4)' }, { transform: 'scale(1.35)' }, { transform: 'none' }], { duration: 380, easing: 'cubic-bezier(.34,1.56,.64,1)' });
+  if (navigator.vibrate && !RM) navigator.vibrate(8);
+  foot(`Question ${c.qi + 1} of ${n}`, nextQuestion);
+}
+function setMarkText(c) { return c.questions.map((q, i) => `${q.q}\n→ ${((c.done || [])[i] || {}).answer || ''}`.replace(/\n\nAdded: /g, ' ')).join('\n\n'); }
+const showedList = c => c.questions.map((q, i) => (((c.done || [])[i] || {}).showed || [])[0] || q.goals[0]);
+function confetti(stage) {
+  const tints = ['--keyS', '--quoteS', '--conceptS', '--actionS', '--ideaS', '--researchS', '--k'];
+  for (let i = 0; i < 30; i++) { const q = document.createElement('i'); q.className = 'unl-conf'; q.style.background = `var(${tints[i % tints.length]})`; stage.appendChild(q); const a = i / 30 * Math.PI * 2 + Math.random() * .3, d = 70 + Math.random() * 60; q.animate([{ transform: 'translate(-50%,-50%) scale(1)', opacity: 1 }, { transform: `translate(${Math.cos(a) * d}px,${Math.sin(a) * d * .8}px) rotate(${Math.random() * 180}deg) scale(.8)`, opacity: 0 }], { duration: 900 + Math.random() * 300, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }); }
+}
+const toEnd = () => { const last = RC.blocks.length - 1; if (pageMode) buildPages(last); else { scrollToBlock(last); const sc = $('#rscroll'); if (sc) sc.scrollTop = 1e7; } };
+async function chUnlock() {
+  const k = CH.k, b = RB, c = CH.c; const next = RC.toc[k + 1]; const showed = showedList(c);
+  b.learned = Math.max(b.learned || 0, k + 1); c.learned = Date.now(); c.draft = '';
   await saveBook(b);
   const head = RC.toc[k].b;
-  await putMark({ id: b.id + ':chal:' + k, book: b.id, kind: 'chal', key: head + '.chal', b: head, color: 'concept', text: fullAnswer().replace(/\n\nAdded: /g, ' '), note: 'Chapter ' + (k + 1) + ' challenge: ' + c.title, page: pageOf[head], ch: RC.toc[k].title, at: Date.now() });
+  await putMark({ id: b.id + ':chal:' + k, book: b.id, kind: 'chal', key: head + '.chal', b: head, color: 'concept', text: setMarkText(c), note: 'Chapter ' + (k + 1) + ' check: ' + c.title, page: pageOf[head], ch: RC.toc[k].title, at: Date.now() });
   chSet('', ''); $('#chFoot').innerHTML = '';
-  $('#chBody').innerHTML = `<div class="unl"><div class="unl-stage" id="unlStage"><div id="unlLock">${lockHTML('locked', 9, '#111', '#fff')}</div></div><div id="unlText" style="opacity:0;width:100%"><div class="lbl" style="letter-spacing:.3em">Unlocked</div><h3>Chapter ${k + 2} is open</h3><div class="ct">${esc(next ? next.title : '')}</div><div class="shown"><div class="lbl" style="margin-bottom:4px">What you showed</div>${goalsHTML(showed.map(() => true), showed)}</div><div style="display:flex;gap:8px;align-items:center;margin-top:12px" class="muted small"><i style="width:10px;height:10px;background:var(--conceptS);display:block"></i>Your answer is saved in the notebook as a Concept</div></div></div>`;
+  $('#chBody').innerHTML = `<div class="unl"><div class="unl-stage" id="unlStage"><div id="unlLock">${lockHTML('locked', 9, '#111', '#fff')}</div></div><div id="unlText" style="opacity:0;width:100%"><div class="lbl" style="letter-spacing:.3em">Unlocked</div><h3>${next ? `Chapter ${k + 2} is open` : 'The final exam is open'}</h3><div class="ct">${next ? esc(next.title) : 'Questions across the whole book'}</div><div class="shown"><div class="lbl" style="margin-bottom:4px">What you showed</div>${goalsHTML(showed.map(() => true), showed)}</div><div style="display:flex;gap:8px;align-items:center;margin-top:12px" class="muted small"><i style="width:10px;height:10px;background:var(--conceptS);display:block"></i>Your answers are saved in the notebook as a Concept</div></div></div>`;
   const lock = $('#unlLock'), stage = $('#unlStage');
   const A = (el, kf, o) => el.animate ? el.animate(kf, o).finished : Promise.resolve();
   if (!RM) {
@@ -1079,29 +1133,67 @@ async function chUnlock(showed) {
     lock.innerHTML = lockHTML('opening', 9, '#111', '#fff'); if (navigator.vibrate) navigator.vibrate(12);
     await A(lock, [{ transform: 'translateY(0)' }, { transform: 'translateY(-6px)' }, { transform: 'none' }], { duration: 200, easing: 'ease-out' });
     lock.innerHTML = lockHTML('open', 9, '#111', '#fff');
-    const tints = ['--keyS', '--quoteS', '--conceptS', '--actionS', '--ideaS', '--researchS', '--k'];
-    for (let i = 0; i < 30; i++) { const q = document.createElement('i'); q.className = 'unl-conf'; q.style.background = `var(${tints[i % tints.length]})`; stage.appendChild(q); const a = i / 30 * Math.PI * 2 + Math.random() * .3, d = 70 + Math.random() * 60; q.animate([{ transform: 'translate(-50%,-50%) scale(1)', opacity: 1 }, { transform: `translate(${Math.cos(a) * d}px,${Math.sin(a) * d * .8}px) rotate(${Math.random() * 180}deg) scale(.8)`, opacity: 0 }], { duration: 900 + Math.random() * 300, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }); }
+    confetti(stage);
   } else lock.innerHTML = lockHTML('open', 9, '#111', '#fff');
   $('#unlText').animate ? $('#unlText').animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 320, fill: 'forwards', delay: RM ? 0 : 200 }) : ($('#unlText').style.opacity = 1);
-  let gone = false; const toNext = () => { if (gone) return; gone = true; CH = null; back(); setTimeout(() => { renderReader(); const nb = next ? next.b : head; if (pageMode) buildPages(nb); else scrollToBlock(nb); const h = bt.querySelector(`[data-b="${nb}"]`) || ($('#cols') && $('#cols').querySelector(`[data-b="${nb}"]`)); if (h) { h.classList.remove('jumped'); void h.offsetWidth; h.classList.add('jumped'); } updateProgress(true); }, 60); };
-  $('#chFoot').innerHTML = `<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px" class="mono muted"><span id="unlBar">${pbar(16, 0)}</span><span style="font-size:9px;letter-spacing:.04em">OPENING CHAPTER ${k + 2}…</span></div><button class="btn" id="chGo">${ic('book', 16, '#fff')}Read chapter ${k + 2}</button>`;
+  let gone = false; const toNext = () => { if (gone) return; gone = true; CH = null; back(); setTimeout(() => { renderReader(); if (!next) { toEnd(); updateProgress(true); return; } const nb = next.b; if (pageMode) buildPages(nb); else scrollToBlock(nb); const h = bt.querySelector(`[data-b="${nb}"]`) || ($('#cols') && $('#cols').querySelector(`[data-b="${nb}"]`)); if (h) { h.classList.remove('jumped'); void h.offsetWidth; h.classList.add('jumped'); } updateProgress(true); }, 60); };
+  $('#chFoot').innerHTML = `<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px" class="mono muted"><span id="unlBar">${pbar(16, 0)}</span><span style="font-size:9px;letter-spacing:.04em">${next ? `OPENING CHAPTER ${k + 2}…` : 'GOING TO THE FINAL EXAM…'}</span></div><button class="btn" id="chGo">${ic('book', 16, '#fff')}${next ? `Read chapter ${k + 2}` : 'Go to the final exam'}</button>`;
   $('#chGo').onclick = toNext;
   let f = 0; const t = setInterval(() => { if (gone || cur() !== 'challenge') { clearInterval(t); return; } f++; const ub = $('#unlBar'); if (ub) ub.innerHTML = pbar(16, f); if (f >= 16) { clearInterval(t); setTimeout(toNext, 200); } }, 2600 / 16);
 }
+async function chExamPassed() {
+  const b = RB, c = CH.c, T = RC.toc.length; b.examDone = Date.now(); c.draft = '';
+  await saveBook(b);
+  const last = RC.blocks.length - 1;
+  await putMark({ id: b.id + ':chal:exam', book: b.id, kind: 'chal', key: last + '.chal', b: last, color: 'concept', text: setMarkText(c), note: 'Final exam: ' + c.title, page: pageOf[last], ch: 'Final exam', at: Date.now() });
+  const qs = Object.values(b.ch || {}).filter(isSet).reduce((s, x) => s + x.questions.length, 0) + c.questions.length;
+  chSet('', ''); $('#chFoot').innerHTML = '';
+  $('#chBody').innerHTML = `<div class="unl"><div class="unl-stage" id="unlStage"><div id="unlLock">${pixHTML(BADGE, 9, '#111', '#fff')}</div></div><div id="unlText" style="opacity:0;width:100%"><div class="lbl" style="letter-spacing:.3em">Final exam passed</div><h3>You know this book</h3><div class="ct">${esc(b.title)}</div><div class="exstats"><div><b>${T}</b><span>CHAPTERS</span></div><div><b>${qs}</b><span>QUESTIONS</span></div><div><b>${b.learned >= T ? '100' : Math.round((b.learned || 0) / T * 100)}%</b><span>LEARNED</span></div></div><div class="shown"><div class="lbl" style="margin-bottom:4px">What you showed</div>${goalsHTML(showedList(c).map(() => true), showedList(c))}</div></div></div>`;
+  const lock = $('#unlLock'), stage = $('#unlStage');
+  if (!RM && lock.animate) { if (navigator.vibrate) navigator.vibrate([10, 40, 14]); await lock.animate([{ transform: 'scale(.3) rotate(-12deg)', opacity: 0 }, { transform: 'scale(1.12) rotate(4deg)', opacity: 1 }, { transform: 'none' }], { duration: 560, easing: 'cubic-bezier(.34,1.56,.64,1)' }).finished; confetti(stage); setTimeout(() => confetti(stage), 350); }
+  $('#unlText').animate ? $('#unlText').animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 320, fill: 'forwards', delay: RM ? 0 : 200 }) : ($('#unlText').style.opacity = 1);
+  foot(`${ic('book', 16, '#fff')}Back to the book`, () => { CH = null; back(); setTimeout(() => { renderReader(); toEnd(); }, 60); });
+}
 function passageSheet() {
-  const c = CH.c; const k = CH.k; const a = RC.toc[k].b, z = RC.toc[k + 1] ? RC.toc[k + 1].b : RC.blocks.length;
+  if (isExam()) {
+    const html = (CH.Q.chapters || []).map(n => { const c = (RB.ch || {})[n - 1]; return `<div class="lbl" style="margin:14px 0 4px">Chapter ${n} · ${esc(RC.toc[n - 1] ? RC.toc[n - 1].title : '')}</div><p>${esc((c && c.summary) || '')}</p>`; }).join('');
+    sheet(`<h3 class="t24" style="margin:4px 0 4px">Look back</h3><div class="sub" style="margin-bottom:8px">WHAT THESE CHAPTERS TAUGHT</div><div class="psg">${html}</div><button class="btn" id="psBack" style="margin-top:12px">Back to my answer</button>`, s => { $('#psBack', s).onclick = closeSheet; });
+    return;
+  }
+  const Q = CH.Q; const k = CH.k; const a = RC.toc[k].b, z = RC.toc[k + 1] ? RC.toc[k + 1].b : RC.blocks.length;
   const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9぀-鿿]+/g, ' ').trim();
-  const q = norm(c.passage).slice(0, 60);
+  const q = norm(Q.passage).slice(0, 60);
   let hit = -1; for (let i = a; i < z; i++) { const b = RC.blocks[i]; if (b.t === 'p' && q && norm(b.x).includes(q.slice(0, 40))) { hit = i; break; } }
-  if (hit >= 0) c.passagePage = pageOf[hit];
+  if (hit >= 0) Q.passagePage = pageOf[hit];
   let html = '';
   if (hit >= 0) {
     const paras = []; for (let i = hit - 1; i <= hit + 1; i++) { const b = RC.blocks[i]; if (b && b.t === 'p' && i >= a && i < z) paras.push([i, b]); }
-    html = paras.map(([i, b]) => `<p>${(b.s && b.s.length ? b.s : [b.x]).map(s => i === hit && norm(c.passage).includes(norm(s).slice(0, 30)) ? `<mark>${esc(s)}</mark>` : esc(s)).join(' ')}</p>`).join('');
-  } else html = `<p><mark>${esc(c.passage || '')}</mark></p>`;
+    html = paras.map(([i, b]) => `<p>${(b.s && b.s.length ? b.s : [b.x]).map(s => i === hit && norm(Q.passage).includes(norm(s).slice(0, 30)) ? `<mark>${esc(s)}</mark>` : esc(s)).join(' ')}</p>`).join('');
+  } else html = `<p><mark>${esc(Q.passage || '')}</mark></p>`;
   sheet(`<h3 class="t24" style="margin:4px 0 4px">The passage</h3><div class="sub" style="margin-bottom:16px">${hit >= 0 ? 'P. ' + esc(pageOf[hit]) + ' · ' : ''}${esc(RC.toc[k].title.toUpperCase())}</div><div class="psg">${html}</div><div style="display:flex;gap:8px;align-items:center;margin:4px 0 20px" class="muted small"><i style="width:10px;height:10px;background:var(--keyS);display:block"></i>This is the idea your answer needs</div><button class="btn" id="psBack">Back to my answer</button>`, s => { $('#psBack', s).onclick = closeSheet; });
 }
-$('#chBody').addEventListener('click', e => { const a = e.target.closest('[data-ch]'); if (!a) return; if (a.dataset.ch === 'passage') passageSheet(); else if (a.dataset.ch === 'stuck') { CH.tries = Math.max(CH.tries, 3); saveDraft(); chStuck(); } });
+
+// "Read again, then try": where to re-read for the part that's missing
+function passageBlock(Q, k) {
+  const a = RC.toc[k].b, z = RC.toc[k + 1] ? RC.toc[k + 1].b : RC.blocks.length;
+  const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9぀-鿿]+/g, ' ').trim();
+  const q = norm(Q.passage).slice(0, 40); if (!q) return -1;
+  for (let i = a; i < z; i++) { const b = RC.blocks[i]; if (b.t === 'p' && norm(b.x).includes(q)) return i; }
+  return -1;
+}
+function sectionAt(i, k) { let t = RC.toc[k].title; for (let j = RC.toc[k].b; j <= i; j++) if (RC.blocks[j].t === 'h') t = RC.blocks[j].x; return t; }
+function rereadHTML(r) {
+  let rows = [];
+  if (isExam()) rows = ((r.review && r.review.length) ? r.review : (CH.Q.chapters || [])).slice(0, 3).filter(n => RC.toc[n - 1]).map(n => ({ b: RC.toc[n - 1].b, top: (/^\s*(chapter|ch\.?|part)\s*\d/i.test(RC.toc[n - 1].title) ? '' : 'CHAPTER ' + n + ' · ') + 'P. ' + (pageOf[RC.toc[n - 1].b] || ''), t: RC.toc[n - 1].title }));
+  else { const i = passageBlock(CH.Q, CH.k); const b = i >= 0 ? i : RC.toc[CH.k].b; rows = [{ b, top: 'P. ' + (pageOf[b] || '') + ' · CHAPTER ' + (CH.k + 1), t: sectionAt(b, CH.k) }]; }
+  if (!rows.length) return '';
+  return `<div class="reread"><div class="lbl">Read again, then try</div>${rows.map(x => `<button class="rr" data-rr="${x.b}"><span class="rr-i">${ic('book', 16)}</span><span style="flex:1;min-width:0"><small>${esc(x.top)}</small><b>${esc(x.t)}</b></span><span class="rr-go">READ</span></button>`).join('')}<p class="muted small" style="margin:8px 0 0;line-height:17px">Your answer is saved. When you’re done, come back from the card at the end of ${isExam() ? 'the book' : 'the chapter'}.</p></div>`;
+}
+function rereadGo(b) {
+  saveDraft(); CH = null; back();
+  setTimeout(() => { renderReader(); jumpTo(b); const el = (pageMode ? $('#cols') : bt).querySelector(`[data-b="${b}"]`); if (el && !/^H/.test(el.tagName)) { el.classList.remove('jumped'); void el.offsetWidth; el.classList.add('jumped'); } toast('Read this part, then come back to your question', { low: true, ms: 2600 }); }, 60);
+}
+$('#chBody').addEventListener('click', e => { const rr = e.target.closest('[data-rr]'); if (rr) return rereadGo(+rr.dataset.rr); const a = e.target.closest('[data-ch]'); if (!a) return; if (a.dataset.ch === 'passage') passageSheet(); else if (a.dataset.ch === 'stuck') { CH.tries = Math.max(CH.tries, 3); saveDraft(); chStuck(); } });
 $('#chClose').onclick = () => { saveDraft(); CH = null; back(); setTimeout(refreshCard, 50); };
 LEAVE.challenge = () => { saveDraft(); };
 
