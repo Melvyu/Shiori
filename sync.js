@@ -14,7 +14,7 @@ const CONTENT = EP.content || 'https://content.dropboxapi.com/2/';
 let st = null;
 async function load() { if (!st) st = (await db.get('kv', 'sync')) || {}; if (!st.key && DEFAULT_KEY) st.key = DEFAULT_KEY; return st; }
 async function persist() { await db.put('kv', st, 'sync'); }
-export async function status() { await load(); return { key: st.key || '', connected: !!st.refresh, email: st.email || '', last: st.last || 0, error: st.error || '' }; }
+export async function status() { await load(); return { key: st.key || '', connected: !!st.refresh, email: st.email || '', last: st.last || 0, error: st.error || '', pending: !st.refresh && !!st.verifier }; }
 export async function setKey(k) { await load(); st.key = k.trim(); await persist(); }
 export async function disconnect() { await load(); Object.assign(st, { refresh: null, access: null, exp: 0, email: '', last: 0, error: '' }); await persist(); await db.put('kv', {}, 'revs'); await db.put('kv', {}, 'synced'); }
 
