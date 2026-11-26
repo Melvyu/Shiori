@@ -1,9 +1,9 @@
 // Shiori service worker: keeps the app working offline.
-const V = 'shiori-v14';
+const V = 'shiori-v15';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'db.js', 'convert.js', 'sync.js', 'ai.js', 'voice.js', 'manifest.webmanifest',
   'vendor/pdf.min.mjs', 'vendor/pdf.worker.min.mjs',
   'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',
-  'fonts/dotgothic16-latin-400-normal.woff2', 'fonts/geist-mono-latin-400-normal.woff2', 'fonts/geist-mono-latin-500-normal.woff2',
+  'fonts/dotgothic16-latin-400-normal.woff2', 'fonts/ibm-plex-mono-latin-400-normal.woff2', 'fonts/ibm-plex-mono-latin-500-normal.woff2', 'fonts/ibm-plex-mono-latin-ext-400-normal.woff2', 'fonts/ibm-plex-mono-latin-ext-500-normal.woff2', 'fonts/ibm-plex-mono-latin-400-italic.woff2',
   'fonts/hanken-grotesk-latin-400-normal.woff2', 'fonts/hanken-grotesk-latin-500-normal.woff2', 'fonts/hanken-grotesk-latin-600-normal.woff2', 'fonts/hanken-grotesk-latin-ext-400-normal.woff2',
   'fonts/newsreader-latin-400-normal.woff2', 'fonts/newsreader-latin-400-italic.woff2', 'fonts/newsreader-latin-500-normal.woff2', 'fonts/newsreader-latin-ext-400-normal.woff2'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(V).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting())); });
