@@ -4,7 +4,7 @@
 // Auth: OAuth 2 PKCE with a pasted code (works inside the iPhone home-screen app, no redirect needed).
 import { db } from './db.js';
 
-export const DEFAULT_KEY = ''; // set once the Dropbox app exists (also editable in Settings)
+export const DEFAULT_KEY = 'y7i3b6ka2nz5lz9'; // set once the Dropbox app exists (also editable in Settings)
 const EP = (globalThis.__SHIORI_DBX || {});
 const AUTH = EP.auth || 'https://www.dropbox.com/oauth2/authorize';
 const TOKEN = EP.token || 'https://api.dropboxapi.com/oauth2/token';
