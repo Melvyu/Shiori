@@ -1,6 +1,7 @@
 // Shiori — personal PDF library & reader. All data lives on this device (IndexedDB).
 import { db } from './db.js';
 import * as SY from './sync.js';
+import * as AI from './ai.js';
 
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -173,11 +174,12 @@ $('#showBtn').addEventListener('click', () => {
 });
 function bookMenu(id, tile) {
   const b = bookById(id); if (!b) return; const bk = tile && tile.querySelector ? tile.querySelector('.book') : null; bk && bk.classList.add('lift'); if (navigator.vibrate) navigator.vibrate(8);
-  sheet(`<div style="display:flex;gap:12px;align-items:center;margin:4px 0 16px"><div style="width:44px;flex:none">${bookEl(b)}</div><div style="min-width:0"><div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(b.title)}</div><div class="muted" style="font-size:12px">${STATUS[b.status]}${b.author ? ' · ' + esc(b.author) : ''}</div></div></div>${[['play', 'Open book', 'open'], ['list', 'Change status', 'status'], ['edit', 'Edit title & author', 'edit'], ['image', 'Change cover', 'cover'], ['trash', 'Delete book', 'del']].map(([i, l, a]) => `<button class="row" data-a="${a}" style="justify-content:flex-start;gap:14px;height:52px${a === 'del' ? ';color:#B3261E' : ''}">${ic(i)}${l}</button>`).join('')}`, s => {
+  sheet(`<div style="display:flex;gap:12px;align-items:center;margin:4px 0 16px"><div style="width:44px;flex:none">${bookEl(b)}</div><div style="min-width:0"><div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(b.title)}</div><div class="muted" style="font-size:12px">${STATUS[b.status]}${b.author ? ' · ' + esc(b.author) : ''}</div></div></div>${(b.chapters || 0) >= 3 && !b.scanned ? `<button class="row" data-a="study" style="justify-content:flex-start;gap:14px;min-height:72px;padding:10px 0;align-items:flex-start"><span style="margin-top:3px">${lockHTML('locked', 2, '#111')}</span><span style="flex:1;text-align:left">Chapter challenges<br><span class="muted" style="font-size:12px;line-height:17px">On: each chapter opens after its challenge. Off: read in any order; progress is kept.</span></span><span class="tog ${b.study ? 'on' : ''}" style="margin-top:4px"></span></button>` : ''}${[['play', 'Open book', 'open'], ['list', 'Change status', 'status'], ['edit', 'Edit title & author', 'edit'], ['image', 'Change cover', 'cover'], ['trash', 'Delete book', 'del']].map(([i, l, a]) => `<button class="row" data-a="${a}" style="justify-content:flex-start;gap:14px;height:52px${a === 'del' ? ';color:#B3261E' : ''}">${ic(i)}${l}</button>`).join('')}`, s => {
     fillCovers(s);
     $$('[data-a]', s).forEach(r => r.addEventListener('click', () => {
       const a = r.dataset.a;
       if (a === 'open') { closeSheet(); openBook(id, bk); }
+      else if (a === 'study') { const on = !b.study; r.querySelector('.tog').classList.toggle('on', on); setStudy(b, on).then(() => { if (cur() === 'book') ENTER.book(); }); }
       else if (a === 'status') statusSheet(b, () => { renderGrid(); if (cur() === 'book') ENTER.book(); });
       else if (a === 'edit') editSheet(b);
       else if (a === 'cover') coverSheet(b);
@@ -341,10 +343,11 @@ let curBook = null;
 ENTER.book = async () => {
   const b = bookById(curBook); if (!b) return;
   const page = b.pos ? b.pos.page || '1' : '1'; const pct = b.pct || 0;
-  const marks = (await db.byBook(b.id)).filter(m => m.kind === 'hl').sort((x, y) => y.at - x.at);
+  const marks = (await db.byBook(b.id)).filter(m => (m.kind === 'hl' || m.kind === 'chal')).sort((x, y) => y.at - x.at);
   $('#bookBody').innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;text-align:center"><div style="width:120px" class="stag">${bookEl(b)}</div><h2 class="t24" style="margin-top:20px;line-height:1.15">${esc(b.title)}</h2><div class="muted" style="font-size:12px;margin-top:4px">${[b.author, b.pageCount + ' pages'].filter(Boolean).map(esc).join(' · ')}</div>
   <div style="display:flex;gap:16px;align-items:center;margin-top:16px"><button class="dd" id="bStatus"><i style="width:8px;height:8px;background:#111;display:block"></i>${STATUS[b.status]}${ic('down', 14)}</button><span style="display:flex;gap:4px" id="stars">${[0, 1, 2, 3, 4].map(i => `<button data-r="${i + 1}" aria-label="${i + 1} stars" style="padding:4px">${ic('star', 18, '#111', i < b.rating ? '#111' : 'none')}</button>`).join('')}</span></div></div>
   <div class="card" style="margin-top:24px;display:flex;flex-direction:column;gap:12px"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="muted" style="font-size:12px">${b.pos ? 'You’re on page' : 'Not started yet'}</div><div style="display:flex;gap:6px;align-items:baseline;margin-top:4px"><span class="dot" style="font-size:40px;line-height:1">${esc(page)}</span><span class="mono muted" style="font-size:12px">/ ${b.pageCount}</span></div></div><div style="text-align:right"><div class="mono muted" style="font-size:10px">Saved automatically</div><div class="mono" style="font-size:12px;margin-top:6px">${Math.round(pct * 100)}%</div></div></div>${pbar(30, Math.round(pct * 30))}</div>
+  ${b.study && (b.chapters || 0) >= 2 ? `<div style="display:flex;gap:10px;align-items:center;margin-top:12px">${lockHTML('open', 2, '#111')}${pbar(Math.min(30, b.chapters), Math.min(30, b.learned || 0))}<span class="mono muted" style="font-size:9px;letter-spacing:.04em;white-space:nowrap">${b.learned || 0} OF ${b.chapters} LEARNED</span></div>` : ''}
   <button class="btn" id="contBtn" style="margin-top:16px">${ic('play', 16, '#fff')}${b.pos ? 'Continue reading' : 'Start reading'}</button>${b.scanned ? '' : `<div style="text-align:center;margin-top:12px"><button class="link" style="font-family:'Hanken Grotesk';font-size:13px" id="bListen">or listen instead</button></div>`}
   <div class="seg" style="margin-top:32px" id="bTabs"><button class="on" data-t="nb">NOTEBOOK ${marks.length}</button><button data-t="ch">CHAPTERS</button><button data-t="rv">REVIEW</button></div><div id="bTab" style="margin-top:8px"></div>`;
   fillCovers($('#bookBody'));
@@ -392,7 +395,7 @@ function blockHTML(b, i, ja) {
 function contentsHTML() {
   const list = (RC.contents && RC.contents.length ? RC.contents : RC.toc) || [];
   if (list.length < 2) return '';
-  return `<nav class="bc" aria-label="Contents"><div class="bc-h">Contents</div><div class="bc-sub">TAP A CHAPTER TO JUMP TO IT</div>${list.map(e => `<button class="bc-i ${e.lv === 2 ? 'lv2' : ''}" data-jb="${e.b}"><span>${esc(e.title)}</span><span>${esc(e.p || '')}</span></button>`).join('')}</nav>`;
+  return `<nav class="bc" aria-label="Contents"><div class="bc-h">Contents</div><div class="bc-sub">TAP A CHAPTER TO JUMP TO IT</div>${list.map(e => { const lk = e.b >= studyLimit(); return `<button class="bc-i ${e.lv === 2 ? 'lv2' : ''} ${lk ? 'locked' : ''}" data-jb="${e.b}"><span>${esc(e.title)}</span><span>${lk ? lockHTML('locked', 2, 'var(--g)', 'var(--paper)') : esc(e.p || '')}</span></button>`; }).join('')}</nav>`;
 }
 function rangeHTML(from, to) { let h = from === 0 && !RB.scanned ? contentsHTML() : ''; const bl = RC.blocks, ja = RB.lang === 'ja'; for (let i = from; i < to && i < bl.length; i++) h += blockHTML(bl[i], i, ja); return h; }
 function lazyImages(root) {
@@ -427,6 +430,7 @@ async function rebuildBook(b) {
       del.push(m.id);
       if (m.kind === 'hl') { const s = sents.find(x => x.x === m.text) || sents.find(x => x.x.includes(m.text.slice(0, 60))); if (s) put.push({ ...m, key: s.key, b: s.b, id: b.id + ':' + s.key }); }
       else if (m.kind === 'bm') { const i = firstOfPage[m.page]; if (i !== undefined) put.push({ ...m, b: i }); }
+      else put.push({ ...m });
     }
     const keepIds = new Set(put.map(m => m.id)); const gone = del.filter(x => !keepIds.has(x));
     if (del.length) await db.delMany('marks', del); for (const x of gone) await SY.markDeleted(x);
@@ -448,7 +452,9 @@ async function openBook(id, bk, o = {}) {
   SENTS = []; sentIdx = new Map(); pageOf = []; nOf = []; let p = '1', n = 1;
   RC.blocks.forEach((bl, i) => { if (bl.t === 'pg') { p = bl.p; n = bl.n || n; } pageOf[i] = p; nOf[i] = n; if (bl.t === 'p') (bl.s && bl.s.length ? bl.s : [bl.x]).forEach((s, k) => { sentIdx.set(i + '.' + k, SENTS.length); SENTS.push({ key: i + '.' + k, b: i, x: s }); }); });
   if (b.status === 'want' || b.status === 'hold') { b.status = 'reading'; }
-  const target = o.jump ?? (b.pos ? b.pos.b : 0);
+  if (b.study === undefined && RC.toc.length >= 3 && !b.scanned) { b.study = await askStudy(b); b.learned = b.learned || 0; await saveBook(b); bk = null; }
+  let target = o.jump ?? (b.pos ? b.pos.b : 0);
+  if (studyOn() && target >= studyLimit()) { target = studyLimit() - 1; if (o.jump !== undefined) setTimeout(() => toast('That part opens after this chapter’s challenge', { low: true }), 900); }
   const start = () => { go('reader', { fade: true, jump: target, flash: o.flash }); if (o.listen) setTimeout(openListen, 500); };
   if (!bk || RM || !bk.animate) { start(); return; }
   bookOpenAnim(bk, target, start);
@@ -493,8 +499,8 @@ function bookOpenAnim(bk, target, start) {
 function renderReader() {
   imgURLs.splice(0).forEach(u => URL.revokeObjectURL(u));
   bt.classList.toggle('ja', RB.lang === 'ja');
-  bt.innerHTML = rangeHTML(0, RC.blocks.length) || '<p class="muted">This PDF has no readable text.</p>';
-  lazyImages(bt);
+  bt.innerHTML = (rangeHTML(0, studyLimit()) + czHTML()) || '<p class="muted">This PDF has no readable text.</p>';
+  lazyImages(bt); czErr = null; watchCz();
 }
 let progScroll = 0;
 function jumpTo(i) {
@@ -570,7 +576,8 @@ function readerClick(e) {
   if (lpFired) { lpFired = false; return; }
   if ($('#qbar').classList.contains('on')) { hideQ(); return; }
   const pd = e.target.closest('.pdiv'); if (pd) { originalPage(+pd.dataset.pg, pd.textContent); return; }
-  const jb = e.target.closest('.bc [data-jb]'); if (jb) { jumpTo(+jb.dataset.jb); return; }
+  const cz = e.target.closest('[data-cz]'); if (cz) { czAction(cz.dataset.cz); return; }
+  const jb = e.target.closest('.bc [data-jb]'); if (jb) { if (+jb.dataset.jb >= studyLimit()) { lockedToast(jb); return; } jumpTo(+jb.dataset.jb); return; }
   const s = e.target.closest('.s'); if (s && MARKS.has(s.dataset.s)) { selectS(s.dataset.s, s, true); return; }
   if (pageMode) { const pr = $('#pmode').getBoundingClientRect(); const rx = (e.clientX - pr.left) / pr.width; if (rx > .62) turn(1); else if (rx < .3) turn(-1); return; }
   const pr = ph.getBoundingClientRect(); const relY = (e.clientY - pr.top) / pr.height;
@@ -662,11 +669,12 @@ function setLayout(l) {
 
 // ---------- page-turn mode (one section at a time, laid out in columns) ----------
 let sec = null, pIdx = 0, pCount = 1, STEP = 345, colsEl = null;
-function sectionOf(i) { const t = RC.toc; if (t.length) { const { k } = chapterAt(i); const a = k >= 0 ? t[k].b : 0; const z = t[k + 1] ? t[k + 1].b : RC.blocks.length; if (z - a < 400) return [a, z]; } const a = Math.floor(i / 120) * 120; return [a, Math.min(RC.blocks.length, a + 120)]; }
+function sectionOf(i) { const lim = studyLimit(); if (i >= lim) i = lim - 1; const s0 = sectionOf0(i); return [s0[0], Math.min(s0[1], lim)]; }
+function sectionOf0(i) { const t = RC.toc; if (t.length) { const { k } = chapterAt(i); const a = k >= 0 ? t[k].b : 0; const z = t[k + 1] ? t[k + 1].b : RC.blocks.length; if (z - a < 400) return [a, z]; } const a = Math.floor(i / 120) * 120; return [a, Math.min(RC.blocks.length, a + 120)]; }
 function buildPages(target) {
   const pm = $('#pmode'); sec = sectionOf(target);
-  pm.innerHTML = `<div class="pbox" id="pbox"><div class="cols bt ${RB.lang === 'ja' ? 'ja' : ''}" id="cols">${rangeHTML(sec[0], sec[1])}</div><div class="pfoot" id="pfoot"></div></div>`;
-  colsEl = $('#cols'); const box = $('#pbox'); const W = box.clientWidth; const cw = W - 48; STEP = W;
+  pm.innerHTML = `<div class="pbox" id="pbox"><div class="cols bt ${RB.lang === 'ja' ? 'ja' : ''}" id="cols">${rangeHTML(sec[0], sec[1])}${sec[1] >= studyLimit() ? czHTML() : ''}</div><div class="pfoot" id="pfoot"></div></div>`;
+  colsEl = $('#cols'); const box = $('#pbox'); setTimeout(watchCz, 50); const W = box.clientWidth; const cw = W - 48; STEP = W;
   colsEl.style.width = cw + 'px'; colsEl.style.columnWidth = cw + 'px'; colsEl.style.columnGap = '48px';
   lazyImages(colsEl);
   requestAnimationFrame(() => {
@@ -677,12 +685,13 @@ function buildPages(target) {
   let sx = null; pm.ontouchstart = e => { sx = e.touches[0].clientX; }; pm.ontouchend = e => { if (sx == null) return; const dx = e.changedTouches[0].clientX - sx; sx = null; if (Math.abs(dx) > 50 && !$('#qbar').classList.contains('on')) turn(dx < 0 ? 1 : -1); };
 }
 function pageTopBlock() { if (!colsEl) return 0; const els = $$('[data-b]', colsEl); for (const e of els) if (e.offsetLeft >= pIdx * STEP - 10 && e.offsetLeft < (pIdx + 1) * STEP - 10) return +e.dataset.b; for (let k = els.length - 1; k >= 0; k--) if (els[k].offsetLeft < pIdx * STEP) return +els[k].dataset.b; return sec ? sec[0] : 0; }
-function place() { colsEl.style.transform = `translateX(${-pIdx * STEP}px)`; const i = pageTopBlock(); $('#pfoot').textContent = `p. ${pageOf[i] || ''} · ${pIdx + 1} / ${pCount}`; }
+function place() { colsEl.style.transform = `translateX(${-pIdx * STEP}px)`; const czc = colsEl.querySelector('.cz'); if (czc && czc.offsetLeft < (pIdx + 1) * STEP && czc.offsetLeft + czc.offsetWidth > pIdx * STEP) { ensureChallenge(+czc.dataset.k); setTimeout(() => czc.querySelector('.ccard').classList.add('dealt'), 380); } const i = pageTopBlock(); $('#pfoot').textContent = `p. ${pageOf[i] || ''} · ${pIdx + 1} / ${pCount}`; }
 function turn(d) {
   hideQ(); bump();
   const ni = pIdx + d;
   if (ni < 0 || ni >= pCount) {
-    if (d > 0 && sec[1] < RC.blocks.length) { buildPages(sec[1]); updateProgress(true); return; }
+    if (d > 0 && sec[1] < studyLimit()) { buildPages(sec[1]); updateProgress(true); return; }
+    if (d > 0 && studyOn() && sec[1] < RC.blocks.length) { lockedToast(null); return; }
     if (d < 0 && sec[0] > 0) { const prevStart = sectionOf(sec[0] - 1); buildPages(prevStart[0]); requestAnimationFrame(() => requestAnimationFrame(() => { pIdx = pCount - 1; place(); updateProgress(true); })); return; }
     toast(d > 0 ? 'The end' : 'The beginning', { low: true, ms: 1200 }); return;
   }
@@ -695,11 +704,11 @@ function turn(d) {
 // ---------- contents ----------
 $('#tContents').onclick = () => {
   const i = topBlock();
-  sheet(`<h3 class="t24" style="margin:4px 0 16px">Contents</h3><div class="seg" style="margin-bottom:12px" id="cT"><button class="on">CHAPTERS ${RC.toc.length}</button><button>BOOKMARKS ${BMS.length}</button></div><div id="cL"></div>`, b => {
-    const ch = () => RC.toc.length ? RC.toc.map((t, k) => { const nx = RC.toc[k + 1]; const here = i >= t.b && (!nx || i < nx.b); const done = nx && i >= nx.b; return `<button class="row" data-jb="${t.b}" style="min-height:${here ? 64 : 52}px;padding:8px 12px;${here ? 'background:#111;color:#fff;border:0' : ''};${done ? 'color:var(--g)' : ''}"><span style="display:flex;gap:12px;align-items:baseline;text-align:left;min-width:0"><span class="dot" style="font-size:16px;width:22px;flex:none">${k + 1}</span><span>${esc(t.title)}${here ? `<br><span class="mono" style="font-size:10px;color:#CFCFCA">You’re here · p. ${esc(pageOf[i])}</span>` : ''}</span></span><span class="mono" style="font-size:12px;flex:none">${done ? '✓ ' : ''}${esc(t.p)}</span></button>`; }).join('') : '<p class="muted small">This PDF has no chapters we could find.</p>';
+  sheet(`<h3 class="t24" style="margin:4px 0 16px">Contents</h3><div class="seg" style="margin-bottom:12px" id="cT"><button class="on">CHAPTERS ${RC.toc.length}</button><button>BOOKMARKS ${BMS.length}</button></div>${studyOn() ? `<div style="display:flex;gap:10px;align-items:center;margin:0 0 8px">${pbar(RC.toc.length, RB.learned || 0)}<span class="mono muted" style="font-size:9px;letter-spacing:.04em;white-space:nowrap">${RB.learned || 0} OF ${RC.toc.length} LEARNED</span></div>` : ''}<div id="cL"></div>`, b => {
+    const ch = () => RC.toc.length ? RC.toc.map((t, k) => { const nx = RC.toc[k + 1]; const here = i >= t.b && (!nx || i < nx.b); const done = nx && i >= nx.b; const lk = t.b >= studyLimit(); if (lk) return `<button class="row" data-lk="1" style="min-height:52px;padding:8px 12px;color:var(--g)"><span style="display:flex;gap:12px;align-items:baseline;text-align:left;min-width:0"><span class="dot" style="font-size:16px;width:22px;flex:none">${k + 1}</span><span>${esc(t.title)}<br><span class="mono" style="font-size:9px;letter-spacing:.04em">OPENS AFTER CHAPTER ${k}</span></span></span>${lockHTML('locked', 3, '#111')}</button>`; return `<button class="row" data-jb="${t.b}" style="min-height:${here ? 64 : 52}px;padding:8px 12px;${here ? 'background:#111;color:#fff;border:0' : ''};${done ? 'color:var(--g)' : ''}"><span style="display:flex;gap:12px;align-items:baseline;text-align:left;min-width:0"><span class="dot" style="font-size:16px;width:22px;flex:none">${k + 1}</span><span>${esc(t.title)}${here ? `<br><span class="mono" style="font-size:10px;color:#CFCFCA">You’re here · p. ${esc(pageOf[i])}</span>` : ''}</span></span><span class="mono" style="font-size:12px;flex:none">${done ? '✓ ' : ''}${esc(t.p)}</span></button>`; }).join('') : '<p class="muted small">This PDF has no chapters we could find.</p>';
     const bm = () => BMS.length ? [...BMS].sort((x, y) => x.b - y.b).map(m => `<div class="row" style="height:52px"><button data-jb="${m.b}" style="display:flex;gap:12px;align-items:center;flex:1;height:100%;text-align:left"><svg width="12" height="20" viewBox="0 0 12 20"><path d="M0 0h12v19l-6-5-6 5z" fill="#111"/></svg><span>Page ${esc(m.page)}<span class="muted small"> · ${esc(m.ch)}</span></span></button><button data-delbm="${esc(m.id)}" aria-label="Remove bookmark" style="padding:8px">${ic('close', 16)}</button></div>`).join('') : '<p class="muted small" style="line-height:20px">No bookmarks yet. Tap the bookmark button at the top while reading.</p>';
     const L = $('#cL', b);
-    const wire = () => { $$('[data-jb]', L).forEach(r => r.onclick = () => { const t = +r.dataset.jb; closeSheet(); jumpTo(t); }); $$('[data-delbm]', L).forEach(x => x.onclick = async () => { const id = x.dataset.delbm; BMS = BMS.filter(m => m.id !== id); await delMark(id); L.innerHTML = bm(); wire(); updateProgress(false); }); };
+    const wire = () => { $$('[data-lk]', L).forEach(r => r.onclick = () => lockedToast(r)); $$('[data-jb]', L).forEach(r => r.onclick = () => { const t = +r.dataset.jb; closeSheet(); jumpTo(t); }); $$('[data-delbm]', L).forEach(x => x.onclick = async () => { const id = x.dataset.delbm; BMS = BMS.filter(m => m.id !== id); await delMark(id); L.innerHTML = bm(); wire(); updateProgress(false); }); };
     L.innerHTML = ch(); wire();
     $$('#cT button', b).forEach((x, k) => x.onclick = () => { $$('#cT button', b).forEach(y => y.classList.toggle('on', y === x)); L.innerHTML = k ? bm() : ch(); wire(); });
   });
@@ -711,7 +720,7 @@ $('#tSearch').onclick = () => {
     inp.oninput = () => { clearTimeout(tm); tm = setTimeout(() => {
       const q = inp.value.trim().toLowerCase(); const R = $('#fRes', b); if (q.length < 2) { R.innerHTML = ''; return; }
       const hits = []; for (const s of SENTS) { if (s.x.toLowerCase().includes(q)) { hits.push(s); if (hits.length > 60) break; } }
-      R.innerHTML = hits.length ? `<div class="lbl" style="margin:12px 0 4px">${hits.length > 60 ? '60+' : hits.length} found</div>` + hits.map(s => `<button class="res" data-fk="${s.key}"><span class="mono muted" style="font-size:10px">p. ${esc(pageOf[s.b])}</span><br><span style="font-size:14px;line-height:20px">${mark(s.x, q)}</span></button>`).join('') : '<p class="muted small">Nothing found.</p>';
+      R.innerHTML = hits.length ? `<div class="lbl" style="margin:12px 0 4px">${hits.length > 60 ? '60+' : hits.length} found</div>` + hits.map(s => s.b >= studyLimit() ? `<div class="res" style="color:var(--g)"><span class="mono" style="font-size:10px">p. ${esc(pageOf[s.b])} · LOCKED</span><br><span style="font-size:14px;line-height:20px">${mark(s.x, q)}</span></div>` : `<button class="res" data-fk="${s.key}"><span class="mono muted" style="font-size:10px">p. ${esc(pageOf[s.b])}</span><br><span style="font-size:14px;line-height:20px">${mark(s.x, q)}</span></button>`).join('') : '<p class="muted small">Nothing found.</p>';
       $$('[data-fk]', R).forEach(r => r.onclick = () => { const k = r.dataset.fk; closeSheet(); const bi = +k.split('.')[0]; if (pageMode) buildPages(bi); else scrollToBlock(bi); setTimeout(() => { flashKey(k); updateProgress(true); }, 300); });
     }, 200); };
   });
@@ -740,6 +749,7 @@ function markNow(i) {
 function speakNext() {
   if (!playing) return; clearTimeout(lt); const my = ++gen;
   if (pi >= SENTS.length) { stopPlay(); toast('End of the book', { low: true }); return; }
+  if (SENTS[pi].b >= studyLimit()) { stopPlay(); toast('Answer this chapter’s challenge to keep listening', { low: true, ms: 2600 }); return; }
   const ja = LANG() === 'ja'; const b = SENTS[pi].b; const ids = []; for (let k = pi; k < SENTS.length && SENTS[k].b === b; k++) ids.push(k);
   let text = ''; const offs = []; ids.forEach(k => { offs.push(text.length); text += SENTS[k].x + (ja ? '' : ' '); });
   markNow(ids[0]); updMini();
@@ -795,7 +805,7 @@ let nbBook = null, nbFilter = 'all';
 async function openNotebook(id) { nbBook = id; nbFilter = 'all'; go('notebook'); }
 ENTER.notebook = async o => {
   const b = bookById(nbBook); if (!b) return;
-  const ms = (await db.byBook(nbBook)).filter(m => m.kind === 'hl').sort((x, y) => x.b - y.b || x.key.localeCompare(y.key, undefined, { numeric: true }));
+  const ms = (await db.byBook(nbBook)).filter(m => (m.kind === 'hl' || m.kind === 'chal')).sort((x, y) => x.b - y.b || x.key.localeCompare(y.key, undefined, { numeric: true }));
   $('#nbSub').textContent = `${b.title} · ${ms.length} kept`;
   const counts = {}; ms.forEach(m => counts[m.color] = (counts[m.color] || 0) + 1);
   const list = nbFilter === 'all' ? ms : ms.filter(m => m.color === nbFilter);
@@ -804,7 +814,7 @@ ENTER.notebook = async o => {
   $$('#nbChips .chip').forEach(c => c.onclick = () => { nbFilter = c.dataset.f; ENTER.notebook(); });
   $$('[data-m]', $('#nbBody')).forEach(el => el.onclick = () => { const m = ms.find(x => x.id === el.dataset.m); if (!m) return; if (stack.includes('reader') && RB && RB.id === m.book) { back(); setTimeout(() => { if (pageMode) buildPages(m.b); else scrollToBlock(m.b); flashKey(m.key); updateProgress(true); }, 340); } else openBook(m.book, null, { jump: m.b, flash: m.key }); });
 };
-$('#nbShare').onclick = async () => { const b = bookById(nbBook); const ms = (await db.byBook(nbBook)).filter(m => m.kind === 'hl').sort((x, y) => x.b - y.b); shareText(`${b.title}${b.author ? ' — ' + b.author : ''}`, notesMarkdown(b, ms)); };
+$('#nbShare').onclick = async () => { const b = bookById(nbBook); const ms = (await db.byBook(nbBook)).filter(m => (m.kind === 'hl' || m.kind === 'chal')).sort((x, y) => x.b - y.b); shareText(`${b.title}${b.author ? ' — ' + b.author : ''}`, notesMarkdown(b, ms)); };
 function notesMarkdown(b, ms) { let out = `# ${b.title}\n${b.author ? '_' + b.author + '_\n' : ''}\n`; let ch = null; ms.forEach(m => { if (m.ch && m.ch !== ch) { ch = m.ch; out += `\n## ${ch}\n\n`; } out += `> ${m.text}\n\n— ${HL[m.color]} · p. ${m.page}\n\n`; if (m.note) out += `${m.note}\n\n`; }); return out; }
 async function shareText(title, text) {
   try { if (navigator.share) { await navigator.share({ title, text }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
@@ -814,7 +824,7 @@ async function shareText(title, text) {
 // ---------- knowledge ----------
 let kFilter = 'all';
 ENTER.knowledge = async () => {
-  const ms = (await db.all('marks')).filter(m => m.kind === 'hl').sort((a, b) => b.at - a.at);
+  const ms = (await db.all('marks')).filter(m => (m.kind === 'hl' || m.kind === 'chal')).sort((a, b) => b.at - a.at);
   const counts = {}; ms.forEach(m => counts[m.color] = (counts[m.color] || 0) + 1);
   const books = new Set(ms.map(m => m.book));
   const list = kFilter === 'all' ? ms : ms.filter(m => m.color === kFilter);
@@ -823,7 +833,7 @@ ENTER.knowledge = async () => {
   $$('#kChips .chip').forEach(c => c.onclick = () => { kFilter = c.dataset.f; ENTER.knowledge(); });
   wireHlItems($('#kBody'));
 };
-$('#kShare').onclick = async () => { const ms = (await db.all('marks')).filter(m => m.kind === 'hl'); if (!ms.length) { toast('Nothing kept yet', { low: true }); return; } let out = ''; BOOKS.forEach(b => { const bm = ms.filter(m => m.book === b.id).sort((x, y) => x.b - y.b); if (bm.length) out += notesMarkdown(b, bm) + '\n'; }); shareText('Shiori — my highlights', out); };
+$('#kShare').onclick = async () => { const ms = (await db.all('marks')).filter(m => (m.kind === 'hl' || m.kind === 'chal')); if (!ms.length) { toast('Nothing kept yet', { low: true }); return; } let out = ''; BOOKS.forEach(b => { const bm = ms.filter(m => m.book === b.id).sort((x, y) => x.b - y.b); if (bm.length) out += notesMarkdown(b, bm) + '\n'; }); shareText('Shiori — my highlights', out); };
 
 // ---------- search ----------
 ENTER.search = o => { if (o && o.back) return; $('#sIn').value = ''; $('#sBody').innerHTML = '<p class="muted" style="font-size:14px;line-height:20px">Search titles, authors, everything inside your books, and your notes.</p>'; setTimeout(() => $('#sIn').focus(), 350); };
@@ -832,7 +842,7 @@ $('#sIn').addEventListener('input', e => { clearTimeout(sTm); sTm = setTimeout((
 async function runSearch(qq) {
   const q = qq.trim().toLowerCase(); const B = $('#sBody'); if (q.length < 2) { B.innerHTML = ''; return; }
   const bs = BOOKS.filter(b => (b.title + ' ' + (b.author || '')).toLowerCase().includes(q));
-  const ms = (await db.all('marks')).filter(m => m.kind === 'hl' && ((m.text || '') + ' ' + (m.note || '')).toLowerCase().includes(q)).slice(0, 20);
+  const ms = (await db.all('marks')).filter(m => (m.kind === 'hl' || m.kind === 'chal') && ((m.text || '') + ' ' + (m.note || '')).toLowerCase().includes(q)).slice(0, 20);
   let inside = [];
   for (const b of BOOKS) { if (inside.length >= 30) break; const c = await db.get('content', b.id); if (!c) continue; for (let i = 0; i < c.blocks.length && inside.length < 30; i++) { const bl = c.blocks[i]; if (bl.t !== 'p') continue; const ss = bl.s && bl.s.length ? bl.s : [bl.x]; for (let k = 0; k < ss.length; k++) if (ss[k].toLowerCase().includes(q)) { inside.push({ b, i, k, x: ss[k], page: (c.blocks.slice(0, i).reverse().find(x => x.t === 'pg') || { p: '1' }).p }); break; } } }
   if ($('#sIn').value.trim().toLowerCase() !== q) return;
@@ -848,7 +858,7 @@ async function runSearch(qq) {
 
 // ---------- journal ----------
 ENTER.journal = async () => {
-  const days = (await db.get('kv', 'days')) || {}; const ms = (await db.all('marks')).filter(m => m.kind === 'hl');
+  const days = (await db.get('kv', 'days')) || {}; const ms = (await db.all('marks')).filter(m => (m.kind === 'hl' || m.kind === 'chal'));
   const yr = new Date().getFullYear();
   const finished = BOOKS.filter(b => b.status === 'done');
   const finishedYr = finished.filter(b => new Date(b.finished || b.lastRead || b.added).getFullYear() === yr).length;
@@ -876,8 +886,12 @@ ENTER.journal = async () => {
 ENTER.settings = async () => {
   let est = ''; try { const e = await navigator.storage.estimate(); est = `${(e.usage / 1048576).toFixed(1)} MB used`; } catch (e) { }
   let persisted = false; try { persisted = await navigator.storage.persisted(); } catch (e) { }
-  const syncHTML = await syncSection(); const syncOn = (await SY.status()).connected;
-  $('#setBody').innerHTML = `<div class="lbl" style="margin:8px 0 8px">Sync</div>${syncHTML}<div class="lbl" style="margin:32px 0 8px">Your library</div>
+  const syncHTML = await syncSection(); const syncOn = (await SY.status()).connected; const ai = await AI.getAI();
+  $('#setBody').innerHTML = `<div class="lbl" style="margin:8px 0 8px">Sync</div>${syncHTML}<div class="lbl" style="margin:32px 0 8px">Chapter challenges</div><p class="muted small" style="line-height:18px;margin:0 0 4px">Challenges are written and checked by Claude, using your own Claude API key. It stays on this device only.</p>
+  <label class="field"><span class="lbl">Claude API key</span><input id="aiKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="${ai.key ? '•••• ' + esc(ai.key.slice(-4)) + ' saved' : 'sk-ant-…'}"></label>
+  <div class="row" style="height:56px;border:0"><span>Model</span><div class="seg" style="width:200px;height:32px" id="aiModel"><button class="${(ai.model || 'smart') === 'smart' ? 'on' : ''}" data-v="smart">SMARTER</button><button class="${ai.model === 'quick' ? 'on' : ''}" data-v="quick">QUICKER</button></div></div>
+  <button class="btn sec" id="aiSave">Save and test</button>${ai.key ? '<button class="link" id="aiDel" style="margin-top:12px;color:#B3261E">Remove key</button>' : ''}
+  <div class="lbl" style="margin:32px 0 8px">Your library</div>
   <div class="row" style="min-height:56px"><span>Books on this device<br><span class="muted small">${BOOKS.length} book${BOOKS.length === 1 ? '' : 's'}${est ? ' · ' + est : ''}</span></span></div>
   <div class="row" style="min-height:56px"><span>Keep my books safe<br><span class="muted small">${persisted ? 'On — your phone won’t clear Shiori’s storage' : 'Asks your phone not to clear Shiori’s storage'}</span></span>${persisted ? ic('check', 18) : '<button class="btn sm sec" id="persist" style="width:auto;height:36px;padding:0 12px;font-size:11px">Turn on</button>'}</div>
   <div class="lbl" style="margin:32px 0 8px">Backup</div>
@@ -886,6 +900,9 @@ ENTER.settings = async () => {
   <div class="lbl" style="margin:32px 0 8px">About</div><p class="muted small" style="line-height:18px;margin:0">Shiori keeps everything on your devices${syncOn ? ' and in your own Dropbox' : ''} — nothing goes anywhere else. Version 1.1.</p>
   <button class="btn warn" id="wipe" style="margin-top:32px">Delete everything</button>`;
   hydrate($('#setBody')); wireSync($('#setBody'));
+  $$('#aiModel button').forEach(x => x.onclick = async () => { $$('#aiModel button').forEach(y => y.classList.toggle('on', y === x)); await AI.setAI({ model: x.dataset.v }); });
+  $('#aiSave').onclick = async () => { const v = $('#aiKey').value.trim(); if (v) await AI.setAI({ key: v }); if (!(await AI.hasKey())) { toast('Paste your key first', { low: true }); return; } $('#aiSave').disabled = true; $('#aiSave').textContent = 'Testing…'; try { await AI.testKey(); toast('Key works — challenges are ready', { low: true }); } catch (e) { toast(esc(e.message), { low: true, ms: 3200 }); } ENTER.settings(); };
+  const ad = $('#aiDel'); if (ad) ad.onclick = async () => { await AI.setAI({ key: '' }); ENTER.settings(); toast('Key removed', { low: true }); };
   const pb = $('#persist'); if (pb) pb.onclick = async () => { let ok = false; try { ok = await navigator.storage.persist(); } catch (e) { } toast(ok ? 'Turned on' : 'Your phone said no — adding Shiori to your Home Screen helps', { low: true, ms: 3200 }); ENTER.settings(); };
   $('#bkOut').onclick = exportBackup; $('#bkIn').onclick = () => { $('#backupIn').value = ''; $('#backupIn').click(); };
   $('#wipe').onclick = () => confirmBox('Delete everything?', 'Every book, highlight and note in Shiori will be removed from this phone. This can’t be undone.', async () => { for (const s of ['books', 'content', 'files', 'marks', 'kv']) { const ks = await db.keys(s); await db.delMany(s, ks); } BOOKS = []; contentCache.clear(); coverURL.clear(); S = { ...DEF }; resetTo('library'); toast('Everything deleted', { low: true }); });
@@ -906,6 +923,187 @@ $('#backupIn').addEventListener('change', async e => {
     toast(matched ? `Restored ${marks} highlights for ${matched} book${matched > 1 ? 's' : ''}` : 'Add the same PDFs first, then restore', { low: true, ms: 3200 });
   } catch (err) { toast('That file isn’t a Shiori backup', { low: true }); }
 });
+
+// ---------- chapter challenges ----------
+// "Study it" books lock each chapter until you answer a short challenge about it.
+const studyOn = () => !!(RB && RB.study && RC && RC.toc && RC.toc.length >= 2 && !RB.scanned);
+const curChapter = () => Math.min(RB.learned || 0, RC.toc.length - 1);
+function studyLimit() { if (!studyOn()) return RC.blocks.length; const nx = RC.toc[(RB.learned || 0) + 1]; return nx ? nx.b : RC.blocks.length; }
+const LOCK_ROWS = {
+  locked: ['..#####..', '.##...##.', '.#.....#.', '.#.....#.', '#########', '#########', '####w####', '####w####', '#########', '#########'],
+  opening: ['..#####..', '.##...##.', '.#.....#.', '.#.....#.', '.#.....#.', '.........', '#########', '#########', '####w####', '####w####', '#########', '#########'],
+  open: ['..#####..', '.##...##.', '.#.....#.', '.#.....#.', '.......#.', '.......#.', '#########', '#########', '####w####', '####w####', '#########', '#########']
+};
+function lockHTML(state = 'locked', px = 3, col = 'currentColor', inv = '#fff') {
+  const rows = LOCK_ROWS[state];
+  return `<span class="plock" aria-hidden="true" style="grid-template-columns:repeat(9,${px}px);grid-auto-rows:${px}px">${rows.map(r => [...r].map(ch => `<i style="background:${ch === '#' ? col : ch === 'w' ? inv : 'transparent'}"></i>`).join('')).join('')}</span>`;
+}
+function chapterText(k) { const a = RC.toc[k].b, z = RC.toc[k + 1] ? RC.toc[k + 1].b : RC.blocks.length; let t = ''; for (let i = a; i < z; i++) { const b = RC.blocks[i]; if (b.t === 'h') t += '\n## ' + b.x + '\n'; else if (b.t === 'p') t += b.x + '\n'; } return t.slice(0, 60000); }
+let czErr = null, genBusy = false, czObs = null;
+function cardInner(k) {
+  const c = (RB.ch || {})[k];
+  if (czErr && !c) return `<div class="cc-err">${esc(czErr.message)}</div><div style="display:flex;gap:8px"><button class="btn sm" data-cz="retry" style="height:40px;font-size:12px">Try again</button>${['nokey', 'badkey', 'credit'].includes(czErr.code) ? '<button class="btn sm sec" data-cz="settings" style="height:40px;font-size:12px">Open Settings</button>' : ''}</div><div class="cc-links"><button class="link" data-cz="off">Turn off challenges for this book</button></div>`;
+  if (!c) return `<div class="cc-load"><div class="cc-dots"><i></i><i></i><i></i></div><div class="cc-t">Writing your challenge…</div><div class="cc-s">Shiori is reading this chapter to find its main idea.</div></div>`;
+  return `<div class="cc-top"><span class="cc-chip"><i></i>${esc(c.type.toUpperCase())}</span><span class="cc-min">ABOUT ${c.minutes} MIN</span></div><div class="cc-title">${esc(c.title)}</div><div class="cc-prompt">${esc(c.prompt)}</div><button class="btn" data-cz="answer">${c.draft ? 'Keep going' : 'Answer'}</button>`;
+}
+function czHTML() {
+  if (!studyOn()) return '';
+  const k = curChapter(); const nx = RC.toc[k + 1]; if (!nx) return '';
+  return `<section class="cz" id="cz" data-k="${k}"><div class="pdiv cz-end">END OF CHAPTER ${k + 1}</div><div class="ccard" id="ccard">${cardInner(k)}</div><div class="cnext">${lockHTML('locked', 3)}<span>OPENS NEXT · ${esc(nx.title.toUpperCase())}</span></div></section>`;
+}
+function watchCz() {
+  if (czObs) czObs.disconnect();
+  czObs = new IntersectionObserver(es => es.forEach(e => { if (!e.isIntersecting) return; const cz = e.target; ensureChallenge(+cz.dataset.k); const r = e.boundingClientRect; if (r.top < innerHeight - 60 && r.left < innerWidth && r.right > 0) setTimeout(() => { const c = cz.querySelector('.ccard'); c && c.classList.add('dealt'); }, 120); }), { rootMargin: '1400px 0px 0px 0px', threshold: [0, 0.05, 0.3] });
+  $$('#reader .cz').forEach(cz => czObs.observe(cz));
+}
+function refreshCard() { const k = curChapter(); $$('#reader #ccard').forEach(c => { c.innerHTML = cardInner(k); }); }
+async function ensureChallenge(k) {
+  if (!studyOn() || (RB.ch || {})[k] || genBusy) return;
+  genBusy = true; czErr = null; refreshCard(); const book = RB;
+  try {
+    const c = await AI.makeChallenge({ book: book.title, chapter: RC.toc[k].title, text: chapterText(k) });
+    book.ch = { ...(book.ch || {}), [k]: { ...c, made: Date.now() } }; await saveBook(book);
+  } catch (e) { czErr = e; }
+  genBusy = false; if (RB === book) refreshCard();
+}
+function czAction(a) {
+  const k = curChapter();
+  if (a === 'answer') openChallenge(k);
+  else if (a === 'retry') { czErr = null; ensureChallenge(k); }
+  else if (a === 'settings') go('settings');
+  else if (a === 'off') setStudy(RB, false);
+}
+async function setStudy(b, on) {
+  b.study = on; await saveBook(b);
+  if (cur() === 'reader' && RB === b) { const i = topBlock(); renderReader(); requestAnimationFrame(() => { if (pageMode) buildPages(i); else scrollToBlock(i); updateProgress(false); }); }
+  toast(on ? 'Chapter challenges on' : 'Every chapter is open now', { low: true });
+}
+function lockedToast(el) { el && (el.classList.remove('wobble'), void el.offsetWidth, el.classList.add('wobble')); toast(`${lockHTML('locked', 2, '#fff', '#111')}<span>Answer chapter ${curChapter() + 1}’s challenge to open this</span>`, { low: true, ms: 2200 }); }
+function askStudy(b) {
+  if (globalThis.__SHIORI_NOASK) return Promise.resolve(false);
+  return new Promise(res => {
+    let pick = true, done = false;
+    sheet(`<h3 class="t24" style="margin:4px 0 6px">How will you use this book?</h3><p class="muted small" style="margin:0 0 4px;line-height:18px">Pick once for this book. You can change it in the book menu.</p>
+    <button class="choice on" data-st="1"><span class="ib">${lockHTML('locked', 3, 'currentColor', '#111')}</span><span style="flex:1"><b>Study it</b><span>Each chapter ends with one short challenge (1–3 min). Answer it in your own words to open the next one.</span><small>BEST FOR BOOKS YOU WANT TO LEARN</small></span><span class="rad"></span></button>
+    <button class="choice" data-st="0"><span class="ib">${ic('list', 20)}</span><span style="flex:1"><b>Reference</b><span>Every chapter stays open. Jump straight to the part you need.</span><small>BEST FOR LOOKING THINGS UP</small></span><span class="rad"></span></button>
+    <button class="btn" id="stGo" style="margin-top:24px">${ic('book', 16, '#fff')}Start reading</button>`, s => {
+      $$('.choice', s).forEach(c => c.onclick = () => { pick = c.dataset.st === '1'; $$('.choice', s).forEach(x => x.classList.toggle('on', x === c)); $('.choice[data-st="1"] .ib', s).innerHTML = lockHTML('locked', 3, 'currentColor', pick ? '#111' : '#F5F5F2'); });
+      $('#stGo', s).onclick = () => { done = true; closeSheet(); res(pick); };
+    }, () => { if (!done) res(false); });
+  });
+}
+
+// the challenge screen: answer → reading → (follow-up | stuck) → unlocked
+let CH = null;
+function openChallenge(k) {
+  const c = RB.ch[k]; CH = { k, c, answer: c.draft || '', adds: [], tries: c.tries || 0, met: c.met || [], last: null, simpleTries: 0 };
+  go('challenge'); chAnswer();
+}
+const chSet = (title, sub) => { $('#chTitle').textContent = title; $('#chSub').textContent = sub || ''; };
+const fullAnswer = () => [CH.answer, ...CH.adds].filter(Boolean).join('\n\nAdded: ');
+function saveDraft() { if (!CH) return; const c = RB.ch[CH.k]; c.draft = CH.answer; c.tries = CH.tries; c.met = CH.met; saveBook(RB); }
+function goalsHTML(met, goals) { return goals.map((g, i) => `<div class="goal ${met[i] ? '' : 'miss'}"><span class="bx">${met[i] ? ic('check', 12, '#fff') : ''}</span><span>${esc(g)}</span></div>`).join(''); }
+function passageLink() { return `<button class="link" data-ch="passage" style="margin-top:16px;display:block">Reopen the passage${CH.c.passagePage ? ' · p. ' + esc(CH.c.passagePage) : ''}</button>`; }
+function foot(label, cb, disabled) { $('#chFoot').innerHTML = `<button class="btn" id="chGo" ${disabled ? 'disabled' : ''}>${label}</button>`; $('#chGo').onclick = cb; }
+function chAnswer() {
+  chSet('Your answer', `CHAPTER ${CH.k + 1} CHALLENGE · ${CH.c.type.toUpperCase()}`);
+  $('#chBody').innerHTML = `<div class="chprompt" id="chPr"><b>${esc(CH.c.title)}</b><p>${esc(CH.c.prompt)}</p><button class="link" id="chMore" style="margin-top:6px">Show all</button></div><textarea class="chta" id="chTa" placeholder="Write it in your own words…">${esc(CH.answer)}</textarea><p class="muted small" style="margin:12px 0 0;line-height:18px">Any answer that shows the idea works — use your own words. Your phone’s keyboard mic works here too.</p>`;
+  $('#chMore').onclick = () => { const p = $('#chPr'); p.classList.toggle('open'); $('#chMore').textContent = p.classList.contains('open') ? 'Show less' : 'Show all'; };
+  const ta = $('#chTa'); const upd = () => { CH.answer = ta.value; $('#chGo').disabled = ta.value.trim().length < 8; };
+  foot('Check my thinking', () => { CH.answer = ta.value.trim(); saveDraft(); chReading(); }, CH.answer.trim().length < 8);
+  let tm; ta.oninput = () => { upd(); clearTimeout(tm); tm = setTimeout(saveDraft, 600); };
+  setTimeout(() => { if (cur() === 'challenge') ta.focus(); }, 380);
+}
+async function chReading() {
+  chSet('Reading your answer…', '');
+  const n = CH.c.goals.length;
+  $('#chBody').innerHTML = `<div class="thinking"><div class="sqs">${CH.c.goals.map(() => '<i></i>').join('')}</div><div class="t24" style="margin-top:22px">Reading your answer…</div><p class="muted" style="font-size:14px;line-height:20px;max-width:290px">Checking it against the idea this chapter teaches — not against one right answer.</p></div>`;
+  $('#chFoot').innerHTML = '';
+  let s = 0; const sq = $$('#chBody .sqs i'); const tick = setInterval(() => { sq.forEach(x => x.classList.remove('f')); sq[s % n] && sq[s % n].classList.add('f'); s++; }, 350);
+  let r;
+  try { r = await AI.checkAnswer({ ch: CH.c, answer: fullAnswer() }); }
+  catch (e) { clearInterval(tick); return chError(e, chReading); }
+  clearInterval(tick); if (cur() !== 'challenge' || !CH) return;
+  CH.last = r; CH.met = r.met;
+  sq.forEach((x, i) => x.classList.toggle('f', !!r.met[i])); await sleep(RM ? 0 : 450);
+  if (r.verdict === 'pass') return chUnlock(r.showed);
+  CH.tries++; saveDraft();
+  if (CH.tries >= 3) return chStuck();
+  chFollowup(r);
+}
+function chError(e, retry) {
+  chSet('Couldn’t check that', '');
+  $('#chBody').innerHTML = `<p style="font-size:15px;line-height:22px">${esc(e.message)}</p><p class="muted small" style="line-height:18px">Your answer is saved.</p>${['nokey', 'badkey', 'credit'].includes(e.code) ? '<button class="btn sec" id="chSet" style="margin-top:16px">Open Settings</button>' : ''}`;
+  const b = $('#chSet'); if (b) b.onclick = () => go('settings');
+  foot('Try again', retry);
+}
+function chFollowup(r) {
+  const metN = r.met.filter(Boolean).length;
+  chSet(metN ? 'Almost there' : 'Not quite yet', `${metN} OF ${r.met.length} PARTS ALREADY THERE`);
+  $('#chBody').innerHTML = `${goalsHTML(r.met, CH.c.goals)}<div class="ask"><div class="who"><i></i>SHIORI ASKS</div><p>${esc(r.followup || 'Which part of the chapter’s idea is missing from your answer?')}</p></div><div class="lbl" style="margin:22px 0 0">Only this part — the rest of your answer stays</div><textarea class="chta short" id="chTa" placeholder="Add the missing part…"></textarea>${passageLink()}<button class="link muted" data-ch="stuck" style="margin-top:14px;display:block;color:var(--g)">I’m stuck — show me an example</button>`;
+  const ta = $('#chTa');
+  foot(`${ic('up', 16, '#fff')}Send`, () => { const v = ta.value.trim(); if (v) CH.adds.push(v); chReading(); }, true);
+  ta.oninput = () => { $('#chGo').disabled = ta.value.trim().length < 3; };
+  setTimeout(() => { if (cur() === 'challenge') ta.focus(); }, 300);
+}
+async function chStuck() {
+  chSet('Let’s work it out', 'A WORKED EXAMPLE, THEN ONE SMALL QUESTION');
+  $('#chBody').innerHTML = `<div class="thinking" style="padding-top:16vh"><div class="cc-dots"><i></i><i></i><i></i></div><p class="muted" style="font-size:14px;margin-top:18px">Finding a good example…</p></div>`; $('#chFoot').innerHTML = '';
+  let ex; try { ex = CH.ex || (CH.ex = await AI.workedExample({ ch: CH.c, answer: fullAnswer(), met: CH.met.length ? CH.met : CH.c.goals.map(() => false) })); } catch (e) { return chError(e, chStuck); }
+  if (cur() !== 'challenge') return;
+  $('#chBody').innerHTML = `<div class="ex"><div class="lbl">Same idea, different situation</div><p style="font-size:14px;line-height:20px;margin:8px 0 0">${esc(ex.setup)}</p>${ex.steps.map((s, i) => `<div class="step ${i === ex.missing ? 'hl' : ''}"><span class="n">${i + 1}</span><span><b>${esc(s.title)}</b><span>${esc(s.detail)}</span></span></div>`).join('')}<p class="muted small" style="margin:10px 0 0">Step ${ex.missing + 1} is the part your answer was missing.</p></div>
+  <div class="lbl" style="margin:24px 0 6px">Your turn · one small question</div><p style="font-size:17px;line-height:24px;margin:0">${esc(ex.question)}</p><textarea class="chta short" id="chTa" placeholder="One sentence is enough"></textarea><div id="chNote"></div>${passageLink()}`;
+  const ta = $('#chTa');
+  foot('Finish', async () => {
+    const v = ta.value.trim(); if (!v) return; $('#chGo').disabled = true; CH.simpleTries++;
+    let ok = CH.simpleTries >= 2;
+    if (!ok) { try { const r = await AI.checkSimple({ ch: CH.c, question: ex.question, answer: v }); ok = r.ok !== false; if (!ok) $('#chNote').innerHTML = `<p class="small" style="margin:10px 0 0;line-height:18px">${esc(r.note || 'Look at step ' + (ex.missing + 1) + ' again, then try once more.')}</p>`; } catch (e) { ok = true; } }
+    if (ok) { CH.adds.push(v); chUnlock(CH.last && CH.last.showed && CH.last.showed.length ? CH.last.showed : CH.c.goals); } else $('#chGo').disabled = false;
+  }, true);
+  ta.oninput = () => { $('#chGo').disabled = ta.value.trim().length < 3; };
+}
+async function chUnlock(showed) {
+  const k = CH.k, b = RB, c = b.ch[k]; const next = RC.toc[k + 1];
+  b.learned = Math.max(b.learned || 0, k + 1); Object.assign(c, { learned: Date.now(), answer: fullAnswer(), draft: '', showed });
+  await saveBook(b);
+  const head = RC.toc[k].b;
+  await putMark({ id: b.id + ':chal:' + k, book: b.id, kind: 'chal', key: head + '.chal', b: head, color: 'concept', text: fullAnswer().replace(/\n\nAdded: /g, ' '), note: 'Chapter ' + (k + 1) + ' challenge: ' + c.title, page: pageOf[head], ch: RC.toc[k].title, at: Date.now() });
+  chSet('', ''); $('#chFoot').innerHTML = '';
+  $('#chBody').innerHTML = `<div class="unl"><div class="unl-stage" id="unlStage"><div id="unlLock">${lockHTML('locked', 9, '#111', '#fff')}</div></div><div id="unlText" style="opacity:0;width:100%"><div class="lbl" style="letter-spacing:.3em">Unlocked</div><h3>Chapter ${k + 2} is open</h3><div class="ct">${esc(next ? next.title : '')}</div><div class="shown"><div class="lbl" style="margin-bottom:4px">What you showed</div>${goalsHTML(showed.map(() => true), showed)}</div><div style="display:flex;gap:8px;align-items:center;margin-top:12px" class="muted small"><i style="width:10px;height:10px;background:var(--conceptS);display:block"></i>Your answer is saved in the notebook as a Concept</div></div></div>`;
+  const lock = $('#unlLock'), stage = $('#unlStage');
+  const A = (el, kf, o) => el.animate ? el.animate(kf, o).finished : Promise.resolve();
+  if (!RM) {
+    if (navigator.vibrate) navigator.vibrate([8]);
+    await A(lock, [{ transform: 'translateY(-8px) scale(1.06)' }, { transform: 'none' }], { duration: 200, easing: 'cubic-bezier(.34,1.56,.64,1)' });
+    await A(lock, [{ transform: 'rotate(0)' }, { transform: 'rotate(-8deg)' }, { transform: 'rotate(8deg)' }, { transform: 'rotate(0)' }], { duration: 260, easing: 'ease-in-out' });
+    lock.innerHTML = lockHTML('opening', 9, '#111', '#fff'); if (navigator.vibrate) navigator.vibrate(12);
+    await A(lock, [{ transform: 'translateY(0)' }, { transform: 'translateY(-6px)' }, { transform: 'none' }], { duration: 200, easing: 'ease-out' });
+    lock.innerHTML = lockHTML('open', 9, '#111', '#fff');
+    const tints = ['--keyS', '--quoteS', '--conceptS', '--actionS', '--ideaS', '--researchS', '--k'];
+    for (let i = 0; i < 30; i++) { const q = document.createElement('i'); q.className = 'unl-conf'; q.style.background = `var(${tints[i % tints.length]})`; stage.appendChild(q); const a = i / 30 * Math.PI * 2 + Math.random() * .3, d = 70 + Math.random() * 60; q.animate([{ transform: 'translate(-50%,-50%) scale(1)', opacity: 1 }, { transform: `translate(${Math.cos(a) * d}px,${Math.sin(a) * d * .8}px) rotate(${Math.random() * 180}deg) scale(.8)`, opacity: 0 }], { duration: 900 + Math.random() * 300, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }); }
+  } else lock.innerHTML = lockHTML('open', 9, '#111', '#fff');
+  $('#unlText').animate ? $('#unlText').animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 320, fill: 'forwards', delay: RM ? 0 : 200 }) : ($('#unlText').style.opacity = 1);
+  let gone = false; const toNext = () => { if (gone) return; gone = true; CH = null; back(); setTimeout(() => { renderReader(); const nb = next ? next.b : head; if (pageMode) buildPages(nb); else scrollToBlock(nb); const h = bt.querySelector(`[data-b="${nb}"]`) || ($('#cols') && $('#cols').querySelector(`[data-b="${nb}"]`)); if (h) { h.classList.remove('jumped'); void h.offsetWidth; h.classList.add('jumped'); } updateProgress(true); }, 60); };
+  $('#chFoot').innerHTML = `<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px" class="mono muted"><span id="unlBar">${pbar(16, 0)}</span><span style="font-size:9px;letter-spacing:.04em">OPENING CHAPTER ${k + 2}…</span></div><button class="btn" id="chGo">${ic('book', 16, '#fff')}Read chapter ${k + 2}</button>`;
+  $('#chGo').onclick = toNext;
+  let f = 0; const t = setInterval(() => { if (gone || cur() !== 'challenge') { clearInterval(t); return; } f++; const ub = $('#unlBar'); if (ub) ub.innerHTML = pbar(16, f); if (f >= 16) { clearInterval(t); setTimeout(toNext, 200); } }, 2600 / 16);
+}
+function passageSheet() {
+  const c = CH.c; const k = CH.k; const a = RC.toc[k].b, z = RC.toc[k + 1] ? RC.toc[k + 1].b : RC.blocks.length;
+  const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9぀-鿿]+/g, ' ').trim();
+  const q = norm(c.passage).slice(0, 60);
+  let hit = -1; for (let i = a; i < z; i++) { const b = RC.blocks[i]; if (b.t === 'p' && q && norm(b.x).includes(q.slice(0, 40))) { hit = i; break; } }
+  if (hit >= 0) c.passagePage = pageOf[hit];
+  let html = '';
+  if (hit >= 0) {
+    const paras = []; for (let i = hit - 1; i <= hit + 1; i++) { const b = RC.blocks[i]; if (b && b.t === 'p' && i >= a && i < z) paras.push([i, b]); }
+    html = paras.map(([i, b]) => `<p>${(b.s && b.s.length ? b.s : [b.x]).map(s => i === hit && norm(c.passage).includes(norm(s).slice(0, 30)) ? `<mark>${esc(s)}</mark>` : esc(s)).join(' ')}</p>`).join('');
+  } else html = `<p><mark>${esc(c.passage || '')}</mark></p>`;
+  sheet(`<h3 class="t24" style="margin:4px 0 4px">The passage</h3><div class="sub" style="margin-bottom:16px">${hit >= 0 ? 'P. ' + esc(pageOf[hit]) + ' · ' : ''}${esc(RC.toc[k].title.toUpperCase())}</div><div class="psg">${html}</div><div style="display:flex;gap:8px;align-items:center;margin:4px 0 20px" class="muted small"><i style="width:10px;height:10px;background:var(--keyS);display:block"></i>This is the idea your answer needs</div><button class="btn" id="psBack">Back to my answer</button>`, s => { $('#psBack', s).onclick = closeSheet; });
+}
+$('#chBody').addEventListener('click', e => { const a = e.target.closest('[data-ch]'); if (!a) return; if (a.dataset.ch === 'passage') passageSheet(); else if (a.dataset.ch === 'stuck') { CH.tries = Math.max(CH.tries, 3); saveDraft(); chStuck(); } });
+$('#chClose').onclick = () => { saveDraft(); CH = null; back(); setTimeout(refreshCard, 50); };
+LEAVE.challenge = () => { saveDraft(); };
 
 // ---------- sync with Dropbox ----------
 const syncCtx = {
