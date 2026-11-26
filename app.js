@@ -50,7 +50,8 @@ const cur = () => stack[stack.length - 1];
 function go(id, o = {}) {
   const c = $('#' + cur()), nx = $('#' + id); if (!nx || c === nx) return;
   ENTER[id] && ENTER[id](o);
-  if (o.fade || RM) { c.classList.remove('on', 'under'); nx.classList.add('fade', 'on'); requestAnimationFrame(() => requestAnimationFrame(() => nx.classList.remove('fade'))); }
+  if (o.instant) { c.classList.remove('on', 'under'); nx.style.transition = 'none'; nx.classList.add('on'); void nx.offsetWidth; nx.style.transition = ''; }
+  else if (o.fade || RM) { c.classList.remove('on', 'under'); nx.classList.add('fade', 'on'); requestAnimationFrame(() => requestAnimationFrame(() => nx.classList.remove('fade'))); }
   else { nx.style.transition = 'none'; nx.classList.remove('on', 'under'); void nx.offsetWidth; nx.style.transition = ''; nx.classList.add('on'); c.classList.add('under'); setTimeout(() => { if (!stack.includes(c.id) || cur() !== c.id) c.classList.remove('on'); }, 340); }
   stack.push(id); miniPos();
 }
@@ -348,7 +349,7 @@ ENTER.book = async () => {
   $('#bookBody').innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;text-align:center"><div style="width:120px" class="stag">${bookEl(b)}</div><h2 class="t24" style="margin-top:20px;line-height:1.15">${esc(b.title)}</h2><div class="muted" style="font-size:12px;margin-top:4px">${[b.author, b.pageCount + ' pages'].filter(Boolean).map(esc).join(' · ')}</div>
   <div style="display:flex;gap:16px;align-items:center;margin-top:16px"><button class="dd" id="bStatus"><i style="width:8px;height:8px;background:#111;display:block"></i>${STATUS[b.status]}${ic('down', 14)}</button><span style="display:flex;gap:4px" id="stars">${[0, 1, 2, 3, 4].map(i => `<button data-r="${i + 1}" aria-label="${i + 1} stars" style="padding:4px">${ic('star', 18, '#111', i < b.rating ? '#111' : 'none')}</button>`).join('')}</span></div></div>
   <div class="card" style="margin-top:24px;display:flex;flex-direction:column;gap:12px"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="muted" style="font-size:12px">${b.pos ? 'You’re on page' : 'Not started yet'}</div><div style="display:flex;gap:6px;align-items:baseline;margin-top:4px"><span class="dot" style="font-size:40px;line-height:1">${esc(page)}</span><span class="mono muted" style="font-size:12px">/ ${b.pageCount}</span></div></div><div style="text-align:right"><div class="mono muted" style="font-size:10px">Saved automatically</div><div class="mono" style="font-size:12px;margin-top:6px">${Math.round(pct * 100)}%</div></div></div>${pbar(30, Math.round(pct * 30))}</div>
-  ${b.study && (b.chapters || 0) >= 2 ? `<div style="display:flex;gap:10px;align-items:center;margin-top:12px">${lockHTML('open', 2, '#111')}${pbar(Math.min(30, b.chapters), Math.min(30, b.learned || 0))}<span class="mono muted" style="font-size:9px;letter-spacing:.04em;white-space:nowrap">${Math.min(b.learned || 0, b.chapters)} OF ${b.chapters} LEARNED${b.examDone ? ' · EXAM PASSED' : ''}</span></div>` : ''}
+  ${b.study && (b.studyN ?? b.chapters ?? 0) >= 2 ? `<div style="display:flex;gap:10px;align-items:center;margin-top:12px">${lockHTML('open', 2, '#111')}${pbar(Math.min(30, b.studyN ?? b.chapters), Math.min(30, b.learnedN ?? b.learned ?? 0))}<span class="mono muted" style="font-size:9px;letter-spacing:.04em;white-space:nowrap">${Math.min(b.learnedN ?? b.learned ?? 0, b.studyN ?? b.chapters)} OF ${b.studyN ?? b.chapters} LEARNED${b.examDone ? ' · EXAM PASSED' : ''}</span></div>` : ''}
   <button class="btn" id="contBtn" style="margin-top:16px">${ic('play', 16, '#fff')}${b.pos ? 'Continue reading' : 'Start reading'}</button>${b.scanned ? '' : `<div style="text-align:center;margin-top:12px"><button class="link" style="font-family:'Hanken Grotesk';font-size:13px" id="bListen">or listen instead</button></div>`}
   <div class="seg" style="margin-top:32px" id="bTabs"><button class="on" data-t="nb">NOTEBOOK ${marks.length}</button><button data-t="ch">CHAPTERS</button><button data-t="rv">REVIEW</button></div><div id="bTab" style="margin-top:8px"></div>`;
   fillCovers($('#bookBody'));
@@ -411,18 +412,27 @@ function applyLook() {
   R.classList.toggle('dark', S.theme === 'dark');
   document.querySelector('meta[name=theme-color]').content = cur() === 'reader' ? th[1] : '#ffffff';
 }
-const CONV = 2; // conversion version — older books are rebuilt once with the newer converter
+const CONV = 3; // conversion version — older books are rebuilt once with the newer converter
 let rebuilding = false;
 async function rebuildBook(b) {
   if ((b.cv || 1) >= CONV || rebuilding) return;
-  rebuilding = true; const t = toast('Tidying this book — skipping the front pages…', { ms: 60000 });
+  rebuilding = true; const t = toast('Tidying this book — skipping the extra pages…', { ms: 60000 });
   try {
     const blob = await SY.getPdf(b.id); if (!blob) return;
     const { convertPdf } = await import('./convert.js');
     const res = await convertPdf(new File([blob], b.fileName || 'book.pdf', { type: 'application/pdf' }));
     await db.delMany('files', (b.imgKeys || []).map(k => 'img:' + b.id + ':' + k));
     if (res.images.length) await db.putMany('files', res.images.map(x => [x.blob, 'img:' + b.id + ':' + x.key]));
+    const prev = await db.get('content', b.id);
     await db.put('content', { blocks: res.blocks, toc: res.toc, contents: res.contents }, b.id);
+    // carry chapter-check progress over by chapter title (the contents list may have changed)
+    if (prev && prev.toc && (b.ch || b.learned)) {
+      const norm = t => String(t || '').toLowerCase().replace(/[^a-z0-9぀-鿿]+/g, ' ').trim();
+      const where = i => { const t = prev.toc[i] && norm(prev.toc[i].title); return t ? res.toc.findIndex(x => norm(x.title) === t) : -1; };
+      const ch = {}; Object.entries(b.ch || {}).forEach(([i, c]) => { const j = where(+i); if (j >= 0) ch[j] = c; }); b.ch = ch;
+      if (b.learned) { let L = -1; for (let i = (b.learned || 0) - 1; i >= 0 && L < 0; i--) { const j = where(i); if (j >= 0) L = j + 1; } b.learned = Math.max(0, L); }
+      if (b.exam && !b.examDone) delete b.exam;
+    }
     // carry highlights and bookmarks over by their text / page
     const sents = []; let pg = '1'; const firstOfPage = {};
     res.blocks.forEach((bl, i) => { if (bl.t === 'pg') { pg = bl.p; if (!(pg in firstOfPage)) firstOfPage[pg] = i; } if (bl.t === 'p') (bl.s && bl.s.length ? bl.s : [bl.x]).forEach((s, k) => sents.push({ key: i + '.' + k, b: i, x: s })); });
@@ -453,54 +463,71 @@ async function openBook(id, bk, o = {}) {
   SENTS = []; sentIdx = new Map(); pageOf = []; nOf = []; let p = '1', n = 1;
   RC.blocks.forEach((bl, i) => { if (bl.t === 'pg') { p = bl.p; n = bl.n || n; } pageOf[i] = p; nOf[i] = n; if (bl.t === 'p') (bl.s && bl.s.length ? bl.s : [bl.x]).forEach((s, k) => { sentIdx.set(i + '.' + k, SENTS.length); SENTS.push({ key: i + '.' + k, b: i, x: s }); }); });
   if (b.status === 'want' || b.status === 'hold') { b.status = 'reading'; }
-  if (b.study === undefined && RC.toc.length >= 3 && !b.scanned) { b.study = await askStudy(b); b.learned = b.learned || 0; await saveBook(b); bk = null; }
+  b.studyN = studyCount(); b.learnedN = doneCount();
+  if (b.study === undefined && b.studyN >= 3 && !b.scanned) { b.study = await askStudy(b); b.learned = b.learned || 0; await saveBook(b); bk = null; }
   let target = o.jump ?? (b.pos ? b.pos.b : 0);
   if (studyOn() && target >= studyLimit()) { target = studyLimit() - 1; if (o.jump !== undefined) setTimeout(() => toast('That part opens after this chapter’s questions', { low: true }), 900); }
-  const start = () => { go('reader', { fade: true, jump: target, flash: o.flash }); if (o.listen) setTimeout(openListen, 500); };
-  if (!bk || RM || !bk.animate) { start(); return; }
-  bookOpenAnim(bk, target, start);
+  const show = prepared => { go('reader', prepared ? { instant: true, prepared: true, jump: target, flash: o.flash } : { fade: true, jump: target, flash: o.flash }); if (o.listen) setTimeout(openListen, 500); };
+  if (!bk || RM || !bk.animate) { show(false); return; }
+  bookOpenAnim(bk, target, () => prepReader(target), () => show(true));
 }
-function bookOpenAnim(bk, target, start) {
+// build the reader underneath while the cover is opening, so the last step is only a fade
+function prepReader(target) {
+  applyLook(); chromeOn(true); renderReader(); pageMode = S.layout === 'page';
+  $('#rscroll').style.display = pageMode ? 'none' : ''; $('#pmode').classList.toggle('on', pageMode);
+  if (pageMode) buildPages(target); else scrollToBlock(target);
+}
+// The opening: the book lifts to the middle, the cover swings open, the first page grows to fill the screen.
+// Only transform and opacity are animated, so the phone keeps it smooth even while the book is being laid out.
+function bookOpenAnim(bk, target, prep, show) {
   applyLook(); const Rd = $('#reader'); const r = bk.getBoundingClientRect(), pr = ph.getBoundingClientRect(), PW = pr.width, PH = pr.height;
   const sx = r.left - pr.left, sy = r.top - pr.top, sw = r.width, sh = r.height; const w = Math.min(160, PW * .4), hh = w * 1.5, cx = (PW - w) / 2, cy = PH * .42 - hh / 2, ox = cx + w / 2;
-  const tx = 20, ty = parseFloat(getComputedStyle(rs).paddingTop) || 114, tw = PW - 40, th = PH - ty;
+  const rbot = $('#reader .rbot'); const tx = 20, ty = parseFloat(getComputedStyle(rs).paddingTop) || 114, tw = PW - 40, th = PH - ty - (rbot ? rbot.offsetHeight : 0);
   const ov = document.createElement('div'); ov.className = 'opening';
   ['--paper', '--rbg', '--ink', '--fs', '--lh', '--bf'].forEach(v => ov.style.setProperty(v, Rd.style.getPropertyValue(v)));
   const from = Math.max(0, target);
-  ov.innerHTML = `<div class="op-bg"></div><div class="op-pg"><div class="op-in" style="width:${tw}px"><div class="bt ${RB.lang === 'ja' ? 'ja' : ''}">${rangeHTML(from, from + 30)}</div></div><i class="op-shade"></i><svg class="op-rib" viewBox="0 0 14 64" preserveAspectRatio="none"><path d="M0 0h14v62l-7-6-7 6z" fill="#111"/></svg></div><div class="op-cv"><div class="f"></div><div class="b"></div></div>`;
+  ov.innerHTML = `<div class="op-bg"></div><div class="op-pg" style="left:${tx}px;top:${ty}px;width:${tw}px;height:${th}px"><div class="op-in" style="width:${tw}px"><div class="bt ${RB.lang === 'ja' ? 'ja' : ''}">${rangeHTML(from, from + 24)}</div></div><i class="op-shade"></i><svg class="op-rib" viewBox="0 0 14 64" preserveAspectRatio="none"><path d="M0 0h14v62l-7-6-7 6z" fill="#111"/></svg></div><div class="op-cv" style="left:${cx}px;top:${cy}px;width:${w}px;height:${hh}px"><div class="f"></div><div class="b"></div></div>`;
   ph.appendChild(ov);
   const img = bk.querySelector('img'); if (img) $('.op-cv .f', ov).innerHTML = `<img alt="" src="${img.src}">`;
-  const bg = $('.op-bg', ov), pg = $('.op-pg', ov), inn = $('.op-in', ov), cv = $('.op-cv', ov), sd = $('.op-shade', ov), rb = $('.op-rib', ov);
-  const box = (x, y, W, H) => ({ left: x + 'px', top: y + 'px', width: W + 'px', height: H + 'px' }); const sc = W => `scale(${W / tw})`;
+  const bg = $('.op-bg', ov), pg = $('.op-pg', ov), inn = $('.op-in', ov), cv = $('.op-cv', ov), sd = $('.op-shade', ov), rb = $('.op-rib', ov), cf = $('.f', cv), cb = $('.b', cv);
+  // page: laid out at its final size, scaled down to a box; its text is counter-scaled so letters never stretch
+  const P = (x, y, W, H) => ({ transform: `translate(${x - tx}px,${y - ty}px) scale(${W / tw},${H / th})` });
+  const I = (W, H) => ({ transform: `scale(1,${(W / tw) / (H / th)})` });
+  // cover: fixed size, hinged on its left edge
+  const C = (x, y, W, H, deg) => ({ transform: `translate(${x - cx}px,${y - cy - (hh / 2) * (1 - H / hh)}px) scale(${W / w},${H / hh}) perspective(1400px) rotateY(${deg}deg)` });
   bk.style.visibility = 'hidden'; if (navigator.vibrate) navigator.vibrate(6);
-  const E = 'cubic-bezier(.2,.8,.2,1)', IO = 'cubic-bezier(.45,.05,.3,1)', T1 = 440, T2 = 680, T3 = 500, d2 = T1 + 80, d3 = d2 + T2 - 20, Z = 'cubic-bezier(.6,0,.2,1)';
-  const a = (el, kf, o) => el.animate(kf, Object.assign({ fill: 'forwards' }, o));
-  [pg, cv].forEach(el => a(el, [box(sx, sy, sw, sh), box(cx, cy, w, hh)], { duration: T1, easing: E, fill: 'both' }));
-  a(inn, [{ transform: sc(sw) }, { transform: sc(w) }], { duration: T1, easing: E, fill: 'both' });
-  a(cv, [{ transform: 'perspective(1400px) rotateY(0deg)' }, { transform: 'perspective(1400px) rotateY(-8deg)' }], { duration: T1, easing: E, fill: 'both' });
-  a(bg, [{ opacity: 0 }, { opacity: .94 }], { duration: T1 + T2, easing: 'ease-out', fill: 'both' });
-  a(rb, [{ transform: 'translateY(-110%)' }, { transform: 'translateY(-110%)' }], { duration: 1, fill: 'both' });
-  [pg, cv].forEach(el => a(el, [box(cx, cy, w, hh), box(ox, cy, w, hh)], { duration: T2, delay: d2, easing: IO }));
-  a(cv, [{ transform: 'perspective(1400px) rotateY(-8deg)' }, { transform: 'perspective(1400px) rotateY(-178deg)' }], { duration: T2, delay: d2, easing: IO });
-  const vis = (el, on) => a(el, [{ visibility: on ? 'visible' : 'hidden' }, { visibility: on ? 'visible' : 'hidden', offset: .49 }, { visibility: on ? 'hidden' : 'visible', offset: .49 }, { visibility: on ? 'hidden' : 'visible' }], { duration: T2, delay: d2, easing: 'linear', fill: 'both' });
-  vis($('.f', cv), true); vis($('.b', cv), false);
-  a(sd, [{ opacity: .5 }, { opacity: 0 }], { duration: T2, delay: d2, easing: IO, fill: 'both' });
-  a(rb, [{ transform: 'translateY(-110%)' }, { transform: 'translateY(0)' }], { duration: 380, delay: d2 + T2 - 260, easing: 'cubic-bezier(.34,1.56,.64,1)' });
-  a(pg, [box(ox, cy, w, hh), box(tx, ty, tw, th)], { duration: T3, delay: d3, easing: Z });
-  a(inn, [{ transform: sc(w) }, { transform: sc(tw) }], { duration: T3, delay: d3, easing: Z });
-  a(cv, [box(ox, cy, w, hh), box(tx, cy, w, hh)], { duration: T3, delay: d3, easing: Z });
-  [$('.f', cv), $('.b', cv)].forEach(el => a(el, [{ opacity: 1 }, { opacity: 0 }], { duration: T3 * .5, delay: d3, easing: 'ease-in' }));
-  a(rb, [{ opacity: 1 }, { opacity: 0 }], { duration: T3 * .6, delay: d3 });
-  a(bg, [{ opacity: .94 }, { opacity: 1 }], { duration: 200, delay: d3 });
-  let went = false, fin = false; const goR = () => { if (went) return; went = true; start(); };
-  const finish = () => { if (fin) return; fin = true; goR(); ov.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 240, fill: 'forwards' }); setTimeout(() => { ov.remove(); bk.style.visibility = ''; }, 250); };
-  setTimeout(goR, d3 + 60); setTimeout(finish, d3 + T3 + 40);
-  ov.addEventListener('click', () => { ov.getAnimations({ subtree: true }).forEach(x => { try { x.finish(); } catch (e) { } }); finish(); });
+  const E = 'cubic-bezier(.2,.8,.2,1)', IO = 'cubic-bezier(.45,.05,.3,1)', Z = 'cubic-bezier(.6,0,.2,1)', T1 = 420, T2 = 660, T3 = 520, d2 = T1 + 60, d3 = d2 + T2 - 40;
+  const a = (el, kf, o) => el.animate(kf, Object.assign({ fill: 'both' }, o));
+  // 1 · lift to the middle
+  a(pg, [P(sx, sy, sw, sh), P(cx, cy, w, hh)], { duration: T1, easing: E });
+  a(inn, [I(sw, sh), I(w, hh)], { duration: T1, easing: E });
+  a(cv, [C(sx, sy, sw, sh, 0), C(cx, cy, w, hh, -8)], { duration: T1, easing: E });
+  a(bg, [{ opacity: 0 }, { opacity: .94 }], { duration: T1 + T2, easing: 'ease-out' });
+  a(rb, [{ transform: 'scaleY(0)' }, { transform: 'scaleY(0)' }], { duration: 1 });
+  // 2 · the cover swings open (front face hides at the halfway point)
+  a(pg, [P(cx, cy, w, hh), P(ox, cy, w, hh)], { duration: T2, delay: d2, easing: IO, fill: 'forwards' });
+  a(cv, [C(cx, cy, w, hh, -8), C(ox, cy, w, hh, -178)], { duration: T2, delay: d2, easing: IO, fill: 'forwards' });
+  a(cf, [{ opacity: 1 }, { opacity: 1, offset: .49 }, { opacity: 0, offset: .5 }, { opacity: 0 }], { duration: T2, delay: d2, easing: 'linear' });
+  a(cb, [{ opacity: 0 }, { opacity: 0, offset: .49 }, { opacity: 1, offset: .5 }, { opacity: 1 }], { duration: T2, delay: d2, easing: 'linear' });
+  a(sd, [{ opacity: .5 }, { opacity: 0 }], { duration: T2, delay: d2, easing: IO });
+  a(rb, [{ transform: 'scaleY(0)' }, { transform: 'scaleY(1)' }], { duration: 380, delay: d2 + T2 - 260, easing: 'cubic-bezier(.34,1.56,.64,1)', fill: 'forwards' });
+  // 3 · the page grows to fill the screen, the open cover slides away
+  a(pg, [P(ox, cy, w, hh), P(tx, ty, tw, th)], { duration: T3, delay: d3, easing: Z, fill: 'forwards' });
+  a(inn, [I(w, hh), { transform: 'scale(1,1)' }], { duration: T3, delay: d3, easing: Z, fill: 'forwards' });
+  a(cv, [C(ox, cy, w, hh, -178), C(tx, cy, w, hh, -178)], { duration: T3, delay: d3, easing: Z, fill: 'forwards' });
+  a(cb, [{ opacity: 1 }, { opacity: 0 }], { duration: T3 * .5, delay: d3, easing: 'ease-in', fill: 'forwards' });
+  a(rb, [{ opacity: 1 }, { opacity: 0 }], { duration: T3 * .6, delay: d3, fill: 'forwards' });
+  a(bg, [{ opacity: .94 }, { opacity: 1 }], { duration: 200, delay: d3, fill: 'forwards' });
+  // build the real reader while the cover is opening; at the end swap it in under the page and fade the copy out
+  let prepped = false; const doPrep = () => { if (prepped) return; prepped = true; try { prep(); } catch (e) { console.warn(e); } };
+  setTimeout(doPrep, d2 + 120);
+  let fin = false; const finish = () => { if (fin) return; fin = true; doPrep(); show(); requestAnimationFrame(() => { ov.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 220, easing: 'ease-out', fill: 'forwards' }); setTimeout(() => { ov.remove(); bk.style.visibility = ''; }, 240); }); };
+  setTimeout(finish, d3 + T3 + 20);
 }
 function renderReader() {
   imgURLs.splice(0).forEach(u => URL.revokeObjectURL(u));
   bt.classList.toggle('ja', RB.lang === 'ja');
-  bt.innerHTML = (rangeHTML(0, studyLimit()) + czHTML()) || '<p class="muted">This PDF has no readable text.</p>';
+  bt.innerHTML = withCz(0, studyLimit()) || '<p class="muted">This PDF has no readable text.</p>';
   lazyImages(bt); czErr = null; watchCz();
 }
 let progScroll = 0;
@@ -542,11 +569,11 @@ function updateProgress(save = true) {
 }
 ENTER.reader = o => {
   if (o && o.back) { applyLook(); return; }
-  applyLook(); chromeOn(true); renderReader(); pageMode = S.layout === 'page';
-  $('#rscroll').style.display = pageMode ? 'none' : ''; $('#pmode').classList.toggle('on', pageMode);
+  const prepared = !!(o && o.prepared);
+  if (!prepared) { applyLook(); chromeOn(true); renderReader(); pageMode = S.layout === 'page'; $('#rscroll').style.display = pageMode ? 'none' : ''; $('#pmode').classList.toggle('on', pageMode); }
   const target = o && o.jump != null ? o.jump : 0;
   requestAnimationFrame(() => {
-    if (pageMode) buildPages(target); else scrollToBlock(target);
+    if (!prepared) { if (pageMode) buildPages(target); else scrollToBlock(target); }
     updateProgress(false);
     if (o && o.flash) flashKey(o.flash);
     else if (RB.pos && target === RB.pos.b && target > 0) setTimeout(() => toast(`${ic('ret', 14, '#fff')}Back where you left off · p. ${esc(RB.pos.page)}`), 700);
@@ -674,7 +701,7 @@ function sectionOf(i) { const lim = studyLimit(); if (i >= lim) i = lim - 1; con
 function sectionOf0(i) { const t = RC.toc; if (t.length) { const { k } = chapterAt(i); const a = k >= 0 ? t[k].b : 0; const z = t[k + 1] ? t[k + 1].b : RC.blocks.length; if (z - a < 400) return [a, z]; } const a = Math.floor(i / 120) * 120; return [a, Math.min(RC.blocks.length, a + 120)]; }
 function buildPages(target) {
   const pm = $('#pmode'); sec = sectionOf(target);
-  pm.innerHTML = `<div class="pbox" id="pbox"><div class="cols bt ${RB.lang === 'ja' ? 'ja' : ''}" id="cols">${rangeHTML(sec[0], sec[1])}${sec[1] >= studyLimit() ? czHTML() : ''}</div><div class="pfoot" id="pfoot"></div></div>`;
+  pm.innerHTML = `<div class="pbox" id="pbox"><div class="cols bt ${RB.lang === 'ja' ? 'ja' : ''}" id="cols">${withCz(sec[0], sec[1])}</div><div class="pfoot" id="pfoot"></div></div>`;
   colsEl = $('#cols'); const box = $('#pbox'); setTimeout(watchCz, 50); const W = box.clientWidth; const cw = W - 48; STEP = W;
   colsEl.style.width = cw + 'px'; colsEl.style.columnWidth = cw + 'px'; colsEl.style.columnGap = '48px';
   lazyImages(colsEl);
@@ -706,7 +733,7 @@ function turn(d) {
 $('#tContents').onclick = () => {
   const i = topBlock();
   sheet(`<h3 class="t24" style="margin:4px 0 16px">Contents</h3><div class="seg" style="margin-bottom:12px" id="cT"><button class="on">CHAPTERS ${RC.toc.length}</button><button>BOOKMARKS ${BMS.length}</button></div>${studyOn() ? `<div style="display:flex;gap:10px;align-items:center;margin:0 0 8px">${pbar(RC.toc.length, RB.learned || 0)}<span class="mono muted" style="font-size:9px;letter-spacing:.04em;white-space:nowrap">${RB.learned || 0} OF ${RC.toc.length} LEARNED</span></div>` : ''}<div id="cL"></div>`, b => {
-    const ch = () => RC.toc.length ? RC.toc.map((t, k) => { const nx = RC.toc[k + 1]; const here = i >= t.b && (!nx || i < nx.b); const done = nx && i >= nx.b; const lk = t.b >= studyLimit(); if (lk) return `<button class="row" data-lk="1" style="min-height:52px;padding:8px 12px;color:var(--g)"><span style="display:flex;gap:12px;align-items:baseline;text-align:left;min-width:0"><span class="dot" style="font-size:16px;width:22px;flex:none">${k + 1}</span><span>${esc(t.title)}<br><span class="mono" style="font-size:9px;letter-spacing:.04em">OPENS AFTER CHAPTER ${k}</span></span></span>${lockHTML('locked', 3, '#111')}</button>`; return `<button class="row" data-jb="${t.b}" style="min-height:${here ? 64 : 52}px;padding:8px 12px;${here ? 'background:#111;color:#fff;border:0' : ''};${done ? 'color:var(--g)' : ''}"><span style="display:flex;gap:12px;align-items:baseline;text-align:left;min-width:0"><span class="dot" style="font-size:16px;width:22px;flex:none">${k + 1}</span><span>${esc(t.title)}${here ? `<br><span class="mono" style="font-size:10px;color:#CFCFCA">You’re here · p. ${esc(pageOf[i])}</span>` : ''}</span></span><span class="mono" style="font-size:12px;flex:none">${done ? '✓ ' : ''}${esc(t.p)}</span></button>`; }).join('') : '<p class="muted small">This PDF has no chapters we could find.</p>';
+    const ch = () => RC.toc.length ? RC.toc.map((t, k) => { const nx = RC.toc[k + 1]; const here = i >= t.b && (!nx || i < nx.b); const done = nx && i >= nx.b; const lk = t.b >= studyLimit(); if (lk) return `<button class="row" data-lk="1" style="min-height:52px;padding:8px 12px;color:var(--g)"><span style="display:flex;gap:12px;align-items:baseline;text-align:left;min-width:0"><span class="dot" style="font-size:16px;width:22px;flex:none">${k + 1}</span><span>${esc(t.title)}<br><span class="mono" style="font-size:9px;letter-spacing:.04em">OPENS AFTER CHAPTER ${chNo(Math.max(0, k - 1))}</span></span></span>${lockHTML('locked', 3, '#111')}</button>`; return `<button class="row" data-jb="${t.b}" style="min-height:${here ? 64 : 52}px;padding:8px 12px;${here ? 'background:#111;color:#fff;border:0' : ''};${done ? 'color:var(--g)' : ''}"><span style="display:flex;gap:12px;align-items:baseline;text-align:left;min-width:0"><span class="dot" style="font-size:16px;width:22px;flex:none">${k + 1}</span><span>${esc(t.title)}${here ? `<br><span class="mono" style="font-size:10px;color:#CFCFCA">You’re here · p. ${esc(pageOf[i])}</span>` : ''}</span></span><span class="mono" style="font-size:12px;flex:none">${done ? '✓ ' : ''}${esc(t.p)}</span></button>`; }).join('') : '<p class="muted small">This PDF has no chapters we could find.</p>';
     const bm = () => BMS.length ? [...BMS].sort((x, y) => x.b - y.b).map(m => `<div class="row" style="height:52px"><button data-jb="${m.b}" style="display:flex;gap:12px;align-items:center;flex:1;height:100%;text-align:left"><svg width="12" height="20" viewBox="0 0 12 20"><path d="M0 0h12v19l-6-5-6 5z" fill="#111"/></svg><span>Page ${esc(m.page)}<span class="muted small"> · ${esc(m.ch)}</span></span></button><button data-delbm="${esc(m.id)}" aria-label="Remove bookmark" style="padding:8px">${ic('close', 16)}</button></div>`).join('') : '<p class="muted small" style="line-height:20px">No bookmarks yet. Tap the bookmark button at the top while reading.</p>';
     const L = $('#cL', b);
     const wire = () => { $$('[data-lk]', L).forEach(r => r.onclick = () => lockedToast(r)); $$('[data-jb]', L).forEach(r => r.onclick = () => { const t = +r.dataset.jb; closeSheet(); jumpTo(t); }); $$('[data-delbm]', L).forEach(x => x.onclick = async () => { const id = x.dataset.delbm; BMS = BMS.filter(m => m.id !== id); await delMark(id); L.innerHTML = bm(); wire(); updateProgress(false); }); };
@@ -1040,8 +1067,22 @@ $('#backupIn').addEventListener('change', async e => {
 // ---------- chapter challenges ----------
 // "Study it" books lock each chapter until you answer a short challenge about it.
 const studyOn = () => !!(RB && RB.study && RC && RC.toc && RC.toc.length >= 2 && !RB.scanned);
-const curChapter = () => Math.min(RB.learned || 0, RC.toc.length - 1);
-function studyLimit() { if (!studyOn()) return RC.blocks.length; const nx = RC.toc[(RB.learned || 0) + 1]; return nx ? nx.b : RC.blocks.length; }
+// only real chapters get questions and locks; introductions, appendices, references, index… stay open
+const NS_EXACT = /^(introduction|intro|preface|foreword|prologue|prelude|interlude|epilogue|afterword|conclusions?|final thoughts|closing thoughts|references|bibliography|works cited|sources|further reading|recommended reading|suggested reading|resources|notes|endnotes|footnotes|glossary|index|general index|subject index|acknowledge?ments?|credits|colophon|permissions|contributors|errata|dedication|contents)([:.—–-].*)?$/i;
+const NS_PREFIX = /^(appendi(x|ces)|about (the|this)|list of|index of|notes (on|to)|a note (on|to)|bibliograph|reference(s)? (list|section)|answers to)/i;
+const chTitle = t => String(t || '').replace(/^\s*(part|section|book)\s+[\divxlc]+\s*[.:)\-–—]?\s*/i, '').replace(/^\s*[\divxlc]+\s*[.:)\-–—]\s*/i, '').trim();
+function isStudyCh(i) { const t = RC.toc[i] ? RC.toc[i].title : ''; if (/^\s*(chapter|ch\.?)\s*[\divxlc]+/i.test(t)) return true; const c = chTitle(t); return !(NS_EXACT.test(c) || NS_PREFIX.test(c)); }
+const nextStudy = k => { const T = RC.toc.length; while (k < T && !isStudyCh(k)) k++; return k; };
+const learnedNow = () => nextStudy(RB.learned || 0);
+const lastStudy = () => { for (let i = RC.toc.length - 1; i >= 0; i--) if (isStudyCh(i)) return i; return -1; };
+const studyCount = () => RC.toc.filter((_, i) => isStudyCh(i)).length;
+const chNo = k => { let n = 0; for (let i = 0; i <= k && i < RC.toc.length; i++) if (isStudyCh(i)) n++; return Math.max(1, n); };
+const doneCount = () => { const L = learnedNow(); return RC.toc.filter((_, i) => i < L && isStudyCh(i)).length; };
+const curChapter = () => Math.min(learnedNow(), RC.toc.length - 1);
+function studyLimit() { if (!studyOn()) return RC.blocks.length; const L = learnedNow(); if (L >= RC.toc.length) return RC.blocks.length; const nx = RC.toc[L + 1]; return nx ? nx.b : RC.blocks.length; }
+// where the question card goes: the end of the open chapter, or (for the final exam) right after the last real chapter
+function czPos() { if (learnedNow() < RC.toc.length) return studyLimit(); const ls = lastStudy(); const nx = RC.toc[ls + 1]; return nx ? nx.b : RC.blocks.length; }
+function withCz(a, z) { if (!studyOn()) return rangeHTML(a, z); const p = czPos(); if (p > a && p <= z) return rangeHTML(a, p) + czHTML() + rangeHTML(p, z); return rangeHTML(a, z); }
 const LOCK_ROWS = {
   locked: ['..#####..', '.##...##.', '.#.....#.', '.#.....#.', '#########', '#########', '####w####', '####w####', '#########', '#########'],
   opening: ['..#####..', '.##...##.', '.#.....#.', '.#.....#.', '.#.....#.', '.........', '#########', '#########', '####w####', '####w####', '#########', '#########'],
@@ -1056,7 +1097,7 @@ function chapterText(k) { const a = RC.toc[k].b, z = RC.toc[k + 1] ? RC.toc[k + 
 const EXAM = 'exam';
 const setOf = k => k === EXAM ? RB.exam : (RB.ch || {})[k];
 const isSet = c => !!(c && Array.isArray(c.questions) && c.questions.length);
-const czKey = () => (RB.learned || 0) >= RC.toc.length ? EXAM : (RB.learned || 0);
+const czKey = () => learnedNow() >= RC.toc.length ? EXAM : learnedNow();
 const BADGE = ['###########', '#.###w###.#', '#.##www##.#', '.#.#####.#.', '..#######..', '...#####...', '....###....', '.....#.....', '.....#.....', '...#####...', '..#######..'];
 function pixHTML(rows, px, col = 'currentColor', inv = '#fff') { return `<span class="plock" aria-hidden="true" style="grid-template-columns:repeat(${rows[0].length},${px}px);grid-auto-rows:${px}px">${rows.map(r => [...r].map(ch => `<i style="background:${ch === '#' ? col : ch === 'w' ? inv : 'transparent'}"></i>`).join('')).join('')}</span>`; }
 const qDots = (n, done, cur = -1) => `<div class="qdots">${Array.from({ length: n }, (_, i) => `<i class="${i < done ? 'f' : i === cur ? 'c' : ''}"></i>`).join('')}<span>${done >= n ? 'ALL DONE' : `QUESTION ${Math.min(n, (cur < 0 ? done : cur) + 1)} OF ${n}`}</span></div>`;
@@ -1067,13 +1108,13 @@ function cardInner(key) {
   if (czErr && !isSet(c)) return `<div class="cc-err">${esc(czErr.message)}</div><div style="display:flex;gap:8px"><button class="btn sm" data-cz="retry" style="height:40px;font-size:12px">Try again</button>${['nokey', 'badkey', 'credit'].includes(czErr.code) ? '<button class="btn sm sec" data-cz="settings" style="height:40px;font-size:12px">Open Settings</button>' : ''}</div><div class="cc-links"><button class="link" data-cz="off">Turn off challenges for this book</button></div>`;
   if (!isSet(c)) return `<div class="cc-load"><div class="cc-dots"><i></i><i></i><i></i></div><div class="cc-t">${ex ? 'Writing your final exam…' : 'Writing your questions…'}</div><div class="cc-s">${ex ? 'Shiori is pulling together what every chapter taught.' : 'Shiori is reading this chapter to find what it teaches.'}</div></div>`;
   const n = c.questions.length, qi = Math.min(c.qi || 0, n - 1), started = (c.qi || 0) > 0 || !!c.draft;
-  return `<div class="cc-top"><span class="cc-chip"><i></i>${ex ? 'FINAL EXAM' : 'CHAPTER ' + (key + 1) + ' CHECK'}</span><span class="cc-min">${n} QUESTIONS · ABOUT ${ex ? 12 : 6} MIN</span></div><div class="cc-title">${esc(c.title)}</div>${qDots(n, c.qi || 0, qi)}<div class="cc-prompt">${esc(c.questions[qi].q)}</div><button class="btn" data-cz="answer">${started ? `Keep going · ${qi + 1} of ${n}` : ex ? 'Start the exam' : 'Start'}</button>`;
+  return `<div class="cc-top"><span class="cc-chip"><i></i>${ex ? 'FINAL EXAM' : 'CHAPTER ' + chNo(key) + ' CHECK'}</span><span class="cc-min">${n} QUESTIONS · ABOUT ${ex ? 12 : 6} MIN</span></div><div class="cc-title">${esc(c.title)}</div>${qDots(n, c.qi || 0, qi)}<div class="cc-prompt">${esc(c.questions[qi].q)}</div><button class="btn" data-cz="answer">${started ? `Keep going · ${qi + 1} of ${n}` : ex ? 'Start the exam' : 'Start'}</button>`;
 }
 function czHTML() {
   if (!studyOn()) return '';
-  const L = RB.learned || 0, T = RC.toc.length;
-  if (L < T) { const nx = RC.toc[L + 1]; return `<section class="cz" id="cz" data-k="${L}"><div class="pdiv cz-end">END OF CHAPTER ${L + 1}</div><div class="ccard" id="ccard">${cardInner(L)}</div><div class="cnext">${lockHTML('locked', 3)}<span>OPENS NEXT · ${nx ? esc(nx.title.toUpperCase()) : 'THE FINAL EXAM'}</span></div></section>`; }
-  return `<section class="cz" id="cz" data-k="exam"><div class="pdiv cz-end">END OF THE BOOK</div><div class="ccard" id="ccard">${cardInner(EXAM)}</div>${RB.examDone ? '' : `<div class="cnext">${pixHTML(BADGE, 2, 'currentColor', 'var(--bg, #fff)')}<span>ALL ${T} CHAPTERS LEARNED · ONE LAST STEP</span></div>`}</section>`;
+  const L = learnedNow(), T = RC.toc.length;
+  if (L < T) { const ns = nextStudy(L + 1), nx = ns < T ? RC.toc[ns] : null; return `<section class="cz" id="cz" data-k="${L}"><div class="pdiv cz-end">END OF CHAPTER ${chNo(L)}</div><div class="ccard" id="ccard">${cardInner(L)}</div><div class="cnext">${lockHTML('locked', 3)}<span>OPENS NEXT · ${nx ? esc(nx.title.toUpperCase()) : 'THE FINAL EXAM'}</span></div></section>`; }
+  return `<section class="cz" id="cz" data-k="exam"><div class="pdiv cz-end">ALL CHAPTERS DONE</div><div class="ccard" id="ccard">${cardInner(EXAM)}</div>${RB.examDone ? '' : `<div class="cnext">${pixHTML(BADGE, 2, 'currentColor', 'var(--bg, #fff)')}<span>ALL ${studyCount()} CHAPTERS LEARNED · ONE LAST STEP</span></div>`}</section>`;
 }
 function watchCz() {
   if (czObs) czObs.disconnect();
@@ -1081,15 +1122,17 @@ function watchCz() {
   $$('#reader .cz').forEach(cz => czObs.observe(cz));
 }
 function refreshCard() { if (!RB || !RC) return; const k = czKey(); $$('#reader #ccard').forEach(c => { c.innerHTML = cardInner(k); }); }
+const exIdx = n => { const m = RB.exam && RB.exam.map; return m ? m[n - 1] : n - 1; };
 const askedBefore = (b, upto) => Object.entries(b.ch || {}).filter(([i, c]) => +i < upto && isSet(c)).flatMap(([, c]) => c.questions.map(q => q.q));
 async function ensureChallenge(key) {
   if (!studyOn() || isSet(setOf(key)) || genBusy || (key === EXAM && RB.examDone)) return;
   genBusy = true; czErr = null; refreshCard(); const book = RB, rc = RC;
   try {
     if (key === EXAM) {
-      const chapters = rc.toc.map((t, i) => { const c = (book.ch || {})[i]; return { title: t.title, summary: (c && c.summary) || chapterText(i).slice(0, 2500) }; });
+      const map = rc.toc.map((_, i) => i).filter(i => isStudyCh(i));
+      const chapters = map.map(i => { const c = (book.ch || {})[i]; return { title: rc.toc[i].title, summary: (c && c.summary) || chapterText(i).slice(0, 2500) }; });
       const c = await AI.makeExam({ book: book.title, chapters, asked: askedBefore(book, 1e9) });
-      book.exam = { ...c, qi: 0, done: [], made: Date.now() };
+      book.exam = { ...c, map, qi: 0, done: [], made: Date.now() };
     } else {
       const c = await AI.makeChapterSet({ book: book.title, chapter: rc.toc[key].title, text: chapterText(key), prior: askedBefore(book, key) });
       book.ch = { ...(book.ch || {}), [key]: { ...c, qi: 0, done: [], made: Date.now() } };
@@ -1110,7 +1153,7 @@ async function setStudy(b, on) {
   if (cur() === 'reader' && RB === b) { const i = topBlock(); renderReader(); requestAnimationFrame(() => { if (pageMode) buildPages(i); else scrollToBlock(i); updateProgress(false); }); }
   toast(on ? 'Chapter challenges on' : 'Every chapter is open now', { low: true });
 }
-function lockedToast(el) { el && (el.classList.remove('wobble'), void el.offsetWidth, el.classList.add('wobble')); toast(`${lockHTML('locked', 2, '#fff', '#111')}<span>Answer chapter ${curChapter() + 1}’s questions to open this</span>`, { low: true, ms: 2200 }); }
+function lockedToast(el) { el && (el.classList.remove('wobble'), void el.offsetWidth, el.classList.add('wobble')); toast(`${lockHTML('locked', 2, '#fff', '#111')}<span>Answer chapter ${chNo(curChapter())}’s questions to open this</span>`, { low: true, ms: 2200 }); }
 function askStudy(b) {
   if (globalThis.__SHIORI_NOASK) return Promise.resolve(false);
   return new Promise(res => {
@@ -1140,11 +1183,11 @@ function nextQuestion() {
 }
 const chSet = (title, sub) => { $('#chTitle').textContent = title; $('#chSub').textContent = sub || ''; };
 const isExam = () => CH.k === EXAM;
-const whereLabel = () => isExam() ? 'FINAL EXAM' : 'CHAPTER ' + (CH.k + 1);
+const whereLabel = () => isExam() ? 'FINAL EXAM' : 'CHAPTER ' + chNo(CH.k);
 const fullAnswer = () => [CH.answer, ...CH.adds].filter(Boolean).join('\n\nAdded: ');
 function saveDraft() { if (!CH) return; const c = CH.c; c.draft = CH.answer; c.adds = CH.adds; c.tries = CH.tries; c.met = CH.met; c.lastR = CH.last; saveBook(RB); }
 function goalsHTML(met, goals) { return goals.map((g, i) => `<div class="goal ${met[i] ? '' : 'miss'}"><span class="bx">${met[i] ? ic('check', 12, '#fff') : ''}</span><span>${esc(g)}</span></div>`).join(''); }
-function qContext(Q) { return (Q.chapters || []).map(n => { const c = (RB.ch || {})[n - 1]; return `Chapter ${n} (${RC.toc[n - 1] ? RC.toc[n - 1].title : ''}): ${(c && c.summary) || ''}`; }).join('\n'); }
+function qContext(Q) { return (Q.chapters || []).map(n => { const i = exIdx(n), c = (RB.ch || {})[i]; return `Chapter ${n} (${RC.toc[i] ? RC.toc[i].title : ''}): ${(c && c.summary) || ''}`; }).join('\n'); }
 function aiQ() { return isExam() ? { ...CH.Q, context: qContext(CH.Q) } : CH.Q; }
 function passageLink() {
   if (isExam()) return (CH.Q.chapters || []).length ? `<button class="link" data-ch="passage" style="margin-top:16px;display:block">Look back at chapter${CH.Q.chapters.length > 1 ? 's' : ''} ${CH.Q.chapters.join(' & ')}</button>` : '';
@@ -1246,15 +1289,15 @@ function confetti(stage) {
   const tints = ['--keyS', '--quoteS', '--conceptS', '--actionS', '--ideaS', '--researchS', '--k'];
   for (let i = 0; i < 30; i++) { const q = document.createElement('i'); q.className = 'unl-conf'; q.style.background = `var(${tints[i % tints.length]})`; stage.appendChild(q); const a = i / 30 * Math.PI * 2 + Math.random() * .3, d = 70 + Math.random() * 60; q.animate([{ transform: 'translate(-50%,-50%) scale(1)', opacity: 1 }, { transform: `translate(${Math.cos(a) * d}px,${Math.sin(a) * d * .8}px) rotate(${Math.random() * 180}deg) scale(.8)`, opacity: 0 }], { duration: 900 + Math.random() * 300, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }); }
 }
-const toEnd = () => { const last = RC.blocks.length - 1; if (pageMode) buildPages(last); else { scrollToBlock(last); const sc = $('#rscroll'); if (sc) sc.scrollTop = 1e7; } };
+const toEnd = () => { const p = Math.max(0, czPos() - 1); if (pageMode) { buildPages(p); return; } const cz = bt.querySelector('#cz'); if (cz) { progScroll = Date.now(); rs.scrollTop = Math.max(0, cz.offsetTop - 160); } else scrollToBlock(p); };
 async function chUnlock() {
-  const k = CH.k, b = RB, c = CH.c; const next = RC.toc[k + 1]; const showed = showedList(c);
-  b.learned = Math.max(b.learned || 0, k + 1); c.learned = Date.now(); c.draft = '';
+  const k = CH.k, b = RB, c = CH.c; const ns = nextStudy(k + 1), next = ns < RC.toc.length ? RC.toc[ns] : null, nNo = next ? chNo(ns) : 0; const showed = showedList(c);
+  b.learned = Math.max(b.learned || 0, k + 1); b.learnedN = doneCount(); c.learned = Date.now(); c.draft = '';
   await saveBook(b);
   const head = RC.toc[k].b;
-  await putMark({ id: b.id + ':chal:' + k, book: b.id, kind: 'chal', key: head + '.chal', b: head, color: 'concept', text: setMarkText(c), note: 'Chapter ' + (k + 1) + ' check: ' + c.title, page: pageOf[head], ch: RC.toc[k].title, at: Date.now() });
+  await putMark({ id: b.id + ':chal:' + k, book: b.id, kind: 'chal', key: head + '.chal', b: head, color: 'concept', text: setMarkText(c), note: 'Chapter ' + chNo(k) + ' check: ' + c.title, page: pageOf[head], ch: RC.toc[k].title, at: Date.now() });
   chSet('', ''); $('#chFoot').innerHTML = '';
-  $('#chBody').innerHTML = `<div class="unl"><div class="unl-stage" id="unlStage"><div id="unlLock">${lockHTML('locked', 9, '#111', '#fff')}</div></div><div id="unlText" style="opacity:0;width:100%"><div class="lbl" style="letter-spacing:.3em">Unlocked</div><h3>${next ? `Chapter ${k + 2} is open` : 'The final exam is open'}</h3><div class="ct">${next ? esc(next.title) : 'Questions across the whole book'}</div><div class="shown"><div class="lbl" style="margin-bottom:4px">What you showed</div>${goalsHTML(showed.map(() => true), showed)}</div><div style="display:flex;gap:8px;align-items:center;margin-top:12px" class="muted small"><i style="width:10px;height:10px;background:var(--conceptS);display:block"></i>Your answers are saved in the notebook as a Concept</div></div></div>`;
+  $('#chBody').innerHTML = `<div class="unl"><div class="unl-stage" id="unlStage"><div id="unlLock">${lockHTML('locked', 9, '#111', '#fff')}</div></div><div id="unlText" style="opacity:0;width:100%"><div class="lbl" style="letter-spacing:.3em">Unlocked</div><h3>${next ? `Chapter ${nNo} is open` : 'The final exam is open'}</h3><div class="ct">${next ? esc(next.title) : 'Questions across the whole book'}</div><div class="shown"><div class="lbl" style="margin-bottom:4px">What you showed</div>${goalsHTML(showed.map(() => true), showed)}</div><div style="display:flex;gap:8px;align-items:center;margin-top:12px" class="muted small"><i style="width:10px;height:10px;background:var(--conceptS);display:block"></i>Your answers are saved in the notebook as a Concept</div></div></div>`;
   const lock = $('#unlLock'), stage = $('#unlStage');
   const A = (el, kf, o) => el.animate ? el.animate(kf, o).finished : Promise.resolve();
   if (!RM) {
@@ -1268,7 +1311,7 @@ async function chUnlock() {
   } else lock.innerHTML = lockHTML('open', 9, '#111', '#fff');
   $('#unlText').animate ? $('#unlText').animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 320, fill: 'forwards', delay: RM ? 0 : 200 }) : ($('#unlText').style.opacity = 1);
   let gone = false; const toNext = () => { if (gone) return; gone = true; CH = null; back(); setTimeout(() => { renderReader(); if (!next) { toEnd(); updateProgress(true); return; } const nb = next.b; if (pageMode) buildPages(nb); else scrollToBlock(nb); const h = bt.querySelector(`[data-b="${nb}"]`) || ($('#cols') && $('#cols').querySelector(`[data-b="${nb}"]`)); if (h) { h.classList.remove('jumped'); void h.offsetWidth; h.classList.add('jumped'); } updateProgress(true); }, 60); };
-  $('#chFoot').innerHTML = `<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px" class="mono muted"><span id="unlBar">${pbar(16, 0)}</span><span style="font-size:9px;letter-spacing:.04em">${next ? `OPENING CHAPTER ${k + 2}…` : 'GOING TO THE FINAL EXAM…'}</span></div><button class="btn" id="chGo">${ic('book', 16, '#fff')}${next ? `Read chapter ${k + 2}` : 'Go to the final exam'}</button>`;
+  $('#chFoot').innerHTML = `<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px" class="mono muted"><span id="unlBar">${pbar(16, 0)}</span><span style="font-size:9px;letter-spacing:.04em">${next ? `OPENING CHAPTER ${nNo}…` : 'GOING TO THE FINAL EXAM…'}</span></div><button class="btn" id="chGo">${ic('book', 16, '#fff')}${next ? `Read chapter ${nNo}` : 'Go to the final exam'}</button>`;
   $('#chGo').onclick = toNext;
   let f = 0; const t = setInterval(() => { if (gone || cur() !== 'challenge') { clearInterval(t); return; } f++; const ub = $('#unlBar'); if (ub) ub.innerHTML = pbar(16, f); if (f >= 16) { clearInterval(t); setTimeout(toNext, 200); } }, 2600 / 16);
 }
@@ -1287,7 +1330,7 @@ async function chExamPassed() {
 }
 function passageSheet() {
   if (isExam()) {
-    const html = (CH.Q.chapters || []).map(n => { const c = (RB.ch || {})[n - 1]; return `<div class="lbl" style="margin:14px 0 4px">Chapter ${n} · ${esc(RC.toc[n - 1] ? RC.toc[n - 1].title : '')}</div><p>${esc((c && c.summary) || '')}</p>`; }).join('');
+    const html = (CH.Q.chapters || []).map(n => { const i = exIdx(n), c = (RB.ch || {})[i]; return `<div class="lbl" style="margin:14px 0 4px">Chapter ${n} · ${esc(RC.toc[i] ? RC.toc[i].title : '')}</div><p>${esc((c && c.summary) || '')}</p>`; }).join('');
     sheet(`<h3 class="t24" style="margin:4px 0 4px">Look back</h3><div class="sub" style="margin-bottom:8px">WHAT THESE CHAPTERS TAUGHT</div><div class="psg">${html}</div><button class="btn" id="psBack" style="margin-top:12px">Back to my answer</button>`, s => { $('#psBack', s).onclick = closeSheet; });
     return;
   }
@@ -1315,8 +1358,8 @@ function passageBlock(Q, k) {
 function sectionAt(i, k) { let t = RC.toc[k].title; for (let j = RC.toc[k].b; j <= i; j++) if (RC.blocks[j].t === 'h') t = RC.blocks[j].x; return t; }
 function rereadHTML(r) {
   let rows = [];
-  if (isExam()) rows = ((r.review && r.review.length) ? r.review : (CH.Q.chapters || [])).slice(0, 3).filter(n => RC.toc[n - 1]).map(n => ({ b: RC.toc[n - 1].b, top: (/^\s*(chapter|ch\.?|part)\s*\d/i.test(RC.toc[n - 1].title) ? '' : 'CHAPTER ' + n + ' · ') + 'P. ' + (pageOf[RC.toc[n - 1].b] || ''), t: RC.toc[n - 1].title }));
-  else { const i = passageBlock(CH.Q, CH.k); const b = i >= 0 ? i : RC.toc[CH.k].b; rows = [{ b, top: 'P. ' + (pageOf[b] || '') + ' · CHAPTER ' + (CH.k + 1), t: sectionAt(b, CH.k) }]; }
+  if (isExam()) rows = ((r.review && r.review.length) ? r.review : (CH.Q.chapters || [])).slice(0, 3).filter(n => RC.toc[exIdx(n)]).map(n => { const e = RC.toc[exIdx(n)]; return { b: e.b, top: (/^\s*(chapter|ch\.?|part)\s*\d/i.test(e.title) ? '' : 'CHAPTER ' + n + ' · ') + 'P. ' + (pageOf[e.b] || ''), t: e.title }; });
+  else { const i = passageBlock(CH.Q, CH.k); const b = i >= 0 ? i : RC.toc[CH.k].b; rows = [{ b, top: 'P. ' + (pageOf[b] || '') + ' · CHAPTER ' + chNo(CH.k), t: sectionAt(b, CH.k) }]; }
   if (!rows.length) return '';
   return `<div class="reread"><div class="lbl">Read again, then try</div>${rows.map(x => `<button class="rr" data-rr="${x.b}"><span class="rr-i">${ic('book', 16)}</span><span style="flex:1;min-width:0"><small>${esc(x.top)}</small><b>${esc(x.t)}</b></span><span class="rr-go">READ</span></button>`).join('')}<p class="muted small" style="margin:8px 0 0;line-height:17px">Your answer is saved. When you’re done, come back from the card at the end of ${isExam() ? 'the book' : 'the chapter'}.</p></div>`;
 }
