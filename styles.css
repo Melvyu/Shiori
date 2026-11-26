@@ -344,3 +344,26 @@ input,textarea{font:16px 'Hanken Grotesk',system-ui,sans-serif;color:var(--k);bo
 /* voice & speed sheet (Figma 12.1) */
 .vrow{display:flex;align-items:center;gap:12px;min-height:52px;border-bottom:1px solid var(--ln);padding:6px 0}
 .vplay.busy{animation:blink .6s steps(2) infinite}
+/* updating Shiori (Figma section 13) */
+.upd{position:absolute;inset:0;z-index:120;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;opacity:0;transition:opacity .3s ease}
+.upd.on{opacity:1}
+.upd-c{display:flex;flex-direction:column;align-items:center;width:min(353px,calc(100% - 40px))}
+.uprib{display:grid;gap:0}
+.uprib i{display:block;box-shadow:inset 0 0 0 1.5px #111;background:transparent;transition:background-color .08s linear}
+.uprib i.f{background:#111}
+.uprib i.hole{box-shadow:none;background:transparent!important}
+.upd-wm{font:30px/38px 'DotGothic16',monospace;margin-top:22px;color:#111}
+.upd-sub{font-size:10px;letter-spacing:.06em;color:var(--g);margin-top:4px}
+.upd-foot{position:absolute;bottom:calc(34px + env(safe-area-inset-bottom));font-size:10px;letter-spacing:.06em;color:var(--g)}
+.wn .upd-c{margin-top:-60px}
+.wn-card{background:var(--so);width:100%;padding:16px 18px 18px;margin-top:36px;text-align:left}
+.wn-card .lbl{margin-bottom:10px}
+.wn-l{display:flex;align-items:center;gap:10px;font-size:14px;line-height:20px;padding:5px 0}
+.wn-l i{width:6px;height:6px;background:#111;flex:none}
+.wn-go{position:absolute;left:20px;right:20px;width:auto;bottom:calc(16px + env(safe-area-inset-bottom))}
+@media (min-width:900px){.wn-go{left:50%;right:auto;width:353px;transform:translateX(-50%)}}
+.updt{position:absolute;left:50%;bottom:calc(150px + env(safe-area-inset-bottom));transform:translate(-50%,16px);opacity:0;z-index:90;background:#111;color:#fff;display:flex;align-items:center;gap:12px;padding:10px 10px 10px 14px;font-size:13px;white-space:nowrap;transition:transform .3s cubic-bezier(.2,.8,.2,1),opacity .3s ease}
+.updt.on{transform:translate(-50%,0);opacity:1}
+.updt-r{display:block;width:10px}
+.updt button{background:#fff;color:#111;font:500 11px 'Geist Mono',monospace;padding:7px 10px}
+@media (prefers-reduced-motion:reduce){.upd,.updt{transition:none}}

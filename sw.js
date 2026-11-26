@@ -1,5 +1,5 @@
 // Shiori service worker: keeps the app working offline.
-const V = 'shiori-v13';
+const V = 'shiori-v14';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'db.js', 'convert.js', 'sync.js', 'ai.js', 'voice.js', 'manifest.webmanifest',
   'vendor/pdf.min.mjs', 'vendor/pdf.worker.min.mjs',
   'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',
@@ -11,6 +11,7 @@ self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Pr
 self.addEventListener('fetch', e => {
   const r = e.request; if (r.method !== 'GET') return;
   const url = new URL(r.url); if (url.origin !== location.origin) return;
+  if (url.pathname.endsWith('/version.json')) return; // always straight from the network
   // network first for the app code (so updates arrive), cache fallback when offline
   // always revalidate with the server (cheap when nothing changed), so a new version shows up on the next reload
   const fresh = r.mode === 'navigate' ? new Request(r.url, { cache: 'no-cache', credentials: 'same-origin' }) : new Request(r, { cache: 'no-cache' });

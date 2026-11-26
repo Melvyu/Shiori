@@ -1418,6 +1418,60 @@ function wireSync(root) {
   };
 }
 
+
+// ---------- updates (Figma section 13): the ribbon fills, Shiori reloads, then a short "what's new" ----------
+let APP_V = null, updBusy = false;
+async function fetchVersion() { try { const r = await fetch('version.json', { cache: 'no-store' }); if (r.ok) return await r.json(); } catch (e) { } return null; }
+function upRibbon(px) { let h = `<div class="uprib" style="grid-template-columns:repeat(5,${px}px)">`; for (let r = 0; r < 13; r++) for (let c = 0; c < 5; c++) h += `<i class="${holes(r, c) ? 'hole' : ''}" data-r="${r}" style="width:${px}px;height:${px}px"></i>`; return h + '</div>'; }
+async function initVersion() {
+  const v = await fetchVersion(); if (!v) return; APP_V = v.v;
+  const seen = await db.get('kv', 'appVersion'); await db.put('kv', v.v, 'appVersion');
+  let resume = null; try { resume = sessionStorage.getItem('shiori.resume'); sessionStorage.removeItem('shiori.resume'); } catch (e) { }
+  const back = () => { if (resume && BOOKS.find(x => x.id === resume)) openBook(resume, null, {}); };
+  if (seen && seen !== v.v && (v.notes || []).length) whatsNew(v, back); else back();
+}
+async function checkUpdate() {
+  if (!APP_V || updBusy) return; const n = await fetchVersion(); if (!n || n.v === APP_V) return;
+  if (cur() === 'reader' || playing || cur() === 'challenge') updateToast(); else runUpdate();
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(checkUpdate, 600); });
+setInterval(() => { if (!document.hidden) checkUpdate(); }, 30 * 60 * 1000);
+function updateToast() {
+  if ($('#updt')) return;
+  const t = document.createElement('div'); t.className = 'updt'; t.id = 'updt';
+  t.innerHTML = `<span class="updt-r">${ribHTML(2, '#fff')}</span><span>A new version of Shiori is ready</span><button id="updtGo">Update</button>`;
+  ph.appendChild(t); requestAnimationFrame(() => t.classList.add('on'));
+  $('#updtGo', t).onclick = e => { e.stopPropagation(); try { if (RB) sessionStorage.setItem('shiori.resume', RB.id); } catch (er) { } if (playing) stopPlay(); t.remove(); runUpdate(); };
+  const off = e => { if (!t.contains(e.target)) { t.classList.remove('on'); setTimeout(() => t.remove(), 300); document.removeEventListener('pointerdown', off, true); } };
+  setTimeout(() => document.addEventListener('pointerdown', off, true), 400);
+}
+async function runUpdate() {
+  if (updBusy) return; updBusy = true;
+  const o = document.createElement('div'); o.className = 'upd';
+  o.innerHTML = `<div class="upd-c">${upRibbon(12)}<div class="upd-wm">Shiori</div><div class="upd-sub mono">栞 · getting the new version</div></div><div class="upd-foot mono">Updating Shiori…</div>`;
+  ph.appendChild(o); requestAnimationFrame(() => o.classList.add('on'));
+  const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration().catch(() => null);
+  const ready = reg ? reg.update().catch(() => { }) : Promise.resolve();
+  await sleep(RM ? 0 : 260);
+  for (let r = 0; r < 13; r++) { $$(`.uprib i[data-r="${r}"]`, o).forEach(i => i.classList.add('f')); await sleep(RM ? 0 : 60); }
+  if (navigator.vibrate) navigator.vibrate(10);
+  const rb = $('.uprib', o); if (rb && rb.animate && !RM) rb.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.06)' }, { transform: 'scale(1)' }], { duration: 260, easing: 'cubic-bezier(.34,1.56,.64,1)' });
+  await Promise.race([ready, sleep(2500)]); await sleep(280);
+  location.reload();
+}
+function whatsNew(v, then) {
+  const o = document.createElement('div'); o.className = 'upd on wn';
+  o.innerHTML = `<div class="upd-c">${upRibbon(12)}<div class="upd-wm">Shiori</div><div class="upd-sub mono">Updated</div><div class="wn-card"><div class="lbl">What’s new</div>${(v.notes || []).slice(0, 4).map(n => `<div class="wn-l"><i></i><span>${esc(n)}</span></div>`).join('')}</div></div><button class="btn wn-go" id="wnGo">Continue</button>`;
+  $$('.uprib i', o).forEach(i => i.classList.add('f'));
+  ph.appendChild(o);
+  if (!RM && o.animate) {
+    $('.wn-card', o).animate([{ opacity: 0, transform: 'translateY(12px)' }, { opacity: 1, transform: 'none' }], { duration: 280, delay: 120, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'both' });
+    $$('.wn-l', o).forEach((l, i) => l.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 240, delay: 260 + i * 60, easing: 'ease-out', fill: 'both' }));
+  }
+  let gone = false; const close = () => { if (gone) return; gone = true; o.classList.remove('on'); setTimeout(() => o.remove(), 320); then && then(); };
+  $('#wnGo', o).onclick = close; o.addEventListener('click', e => { if (e.target === o) close(); });
+}
+
 // ---------- computer extras: drop PDFs, keyboard, right-click to mark ----------
 ph.addEventListener('dragover', e => { if ([...(e.dataTransfer && e.dataTransfer.items || [])].some(i => i.kind === 'file')) { e.preventDefault(); ph.classList.add('dropping'); } });
 ph.addEventListener('dragleave', e => { if (e.target === ph || !ph.contains(e.relatedTarget)) ph.classList.remove('dropping'); });
@@ -1441,6 +1495,7 @@ document.addEventListener('keydown', e => {
   runSplash();
   await splashP;
   ENTER.library({ first: true }); syncTabs(true);
+  initVersion().catch(() => { });
   setTimeout(() => resumePending().catch(() => { }), 500);
   try { if ((await SY.status()).connected) setTimeout(runSync, 1200); } catch (e) { }
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) navigator.serviceWorker.register('sw.js').catch(() => { });
