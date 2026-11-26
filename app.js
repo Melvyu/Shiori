@@ -2,6 +2,7 @@
 import { db } from './db.js';
 import * as SY from './sync.js';
 import * as AI from './ai.js';
+import * as TTS from './voice.js';
 
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -13,7 +14,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 // ---------- icons ----------
-const ICONS = { search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>', plus: '<path d="M5 12h14"/><path d="M12 5v14"/>', back: '<path d="m15 18-6-6 6-6"/>', close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>', more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>', play: '<path d="M7 4.5v15l12-7.5z" fill="currentColor"/>', pause: '<rect x="6" y="4" width="4" height="16" fill="currentColor" stroke="none"/><rect x="14" y="4" width="4" height="16" fill="currentColor" stroke="none"/>', head: '<path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/>', list: '<path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M3 6h.01"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M8 6h13"/>', pen: '<path d="M12 20h9"/><path d="M16.4 3.6a1 1 0 0 1 3 3L7.4 18.6a2 2 0 0 1-.9.5l-2.9.8.8-2.9a2 2 0 0 1 .5-.8z"/>', bookmark: '<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>', type: '<path d="m15 16 2.5-7.3a1 1 0 0 1 1.9 0L22 16"/><path d="M15.7 14h5.6"/><path d="m2 16 4-9.7a.5.5 0 0 1 .9 0L11 16"/><path d="M3.3 13h6.4"/>', check: '<path d="M20 6 9 17l-5-5"/>', down: '<path d="m6 9 6 6 6-6"/>', next: '<path d="m9 18 6-6-6-6"/>', rew: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>', fwd: '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>', star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>', trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>', image: '<rect width="18" height="18" x="3" y="3" rx="1"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3-3a2 2 0 0 0-2.8 0L6 21"/>', edit: '<path d="M12 20h9"/><path d="M16.4 3.6a1 1 0 0 1 3 3L7.4 18.6a2 2 0 0 1-.9.5l-2.9.8.8-2.9a2 2 0 0 1 .5-.8z"/>', book: '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>', layers: '<path d="M12.8 2.2a2 2 0 0 0-1.6 0L2.6 6.1a1 1 0 0 0 0 1.8l8.6 3.9a2 2 0 0 0 1.6 0l8.6-3.9a1 1 0 0 0 0-1.8Z"/><path d="m22 17.6-9.2 4.2a2 2 0 0 1-1.6 0L2 17.6"/><path d="m22 12.6-9.2 4.2a2 2 0 0 1-1.6 0L2 12.6"/>', chart: '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>', copy: '<rect width="14" height="14" x="8" y="8" rx="1"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>', ret: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>', gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>', upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/>', share: '<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="m16 6-4-4-4 4"/><path d="M12 2v13"/>', file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>', underline: '<path d="M6 4v6a6 6 0 0 0 12 0V4"/><path d="M4 20h16"/>' };
+const ICONS = { vol: '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/>', search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>', plus: '<path d="M5 12h14"/><path d="M12 5v14"/>', back: '<path d="m15 18-6-6 6-6"/>', close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>', more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>', play: '<path d="M7 4.5v15l12-7.5z" fill="currentColor"/>', pause: '<rect x="6" y="4" width="4" height="16" fill="currentColor" stroke="none"/><rect x="14" y="4" width="4" height="16" fill="currentColor" stroke="none"/>', head: '<path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/>', list: '<path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M3 6h.01"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M8 6h13"/>', pen: '<path d="M12 20h9"/><path d="M16.4 3.6a1 1 0 0 1 3 3L7.4 18.6a2 2 0 0 1-.9.5l-2.9.8.8-2.9a2 2 0 0 1 .5-.8z"/>', bookmark: '<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>', type: '<path d="m15 16 2.5-7.3a1 1 0 0 1 1.9 0L22 16"/><path d="M15.7 14h5.6"/><path d="m2 16 4-9.7a.5.5 0 0 1 .9 0L11 16"/><path d="M3.3 13h6.4"/>', check: '<path d="M20 6 9 17l-5-5"/>', down: '<path d="m6 9 6 6 6-6"/>', next: '<path d="m9 18 6-6-6-6"/>', rew: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>', fwd: '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>', star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>', trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>', image: '<rect width="18" height="18" x="3" y="3" rx="1"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3-3a2 2 0 0 0-2.8 0L6 21"/>', edit: '<path d="M12 20h9"/><path d="M16.4 3.6a1 1 0 0 1 3 3L7.4 18.6a2 2 0 0 1-.9.5l-2.9.8.8-2.9a2 2 0 0 1 .5-.8z"/>', book: '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>', layers: '<path d="M12.8 2.2a2 2 0 0 0-1.6 0L2.6 6.1a1 1 0 0 0 0 1.8l8.6 3.9a2 2 0 0 0 1.6 0l8.6-3.9a1 1 0 0 0 0-1.8Z"/><path d="m22 17.6-9.2 4.2a2 2 0 0 1-1.6 0L2 17.6"/><path d="m22 12.6-9.2 4.2a2 2 0 0 1-1.6 0L2 12.6"/>', chart: '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>', copy: '<rect width="14" height="14" x="8" y="8" rx="1"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>', ret: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>', gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>', upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/>', share: '<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="m16 6-4-4-4 4"/><path d="M12 2v13"/>', file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>', underline: '<path d="M6 4v6a6 6 0 0 0 12 0V4"/><path d="M4 20h16"/>' };
 const ic = (n, s = 18, c = 'currentColor', fill = 'none') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="${fill}" stroke="${c}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:block">${ICONS[n] || ''}</svg>`;
 const hydrate = (root = document) => $$('[data-i]', root).forEach(e => { if (e.dataset.done) return; e.dataset.done = 1; e.insertAdjacentHTML('afterbegin', ic(e.dataset.i, +(e.dataset.s || 18), e.dataset.c || 'currentColor')); });
 const pbar = (n, f, extra = '') => `<div class="pb" ${extra}>${Array.from({ length: n }, (_, i) => `<i class="${i < f ? 'f' : ''}"></i>`).join('')}</div>`;
@@ -21,7 +22,7 @@ const HL = { key: 'Important', quote: 'Quote', concept: 'Concept', action: 'Acti
 const STATUS = { reading: 'Reading', want: 'Want to read', done: 'Finished', hold: 'On hold' };
 
 // ---------- settings ----------
-const DEF = { theme: 'white', fs: 18, lsp: 'normal', font: 'serif', layout: 'scroll', goal: 12, filter: 'all', voice_en: '', voice_ja: '', rate: 1, scrollAlong: true };
+const DEF = { theme: 'white', fs: 18, lsp: 'normal', font: 'serif', layout: 'scroll', goal: 12, filter: 'all', voice_en: '', voice_ja: '', rate: 1, scrollAlong: true, vmode: 'natural', nv: 'Sulafat' };
 let S = { ...DEF };
 const saveS = () => db.put('kv', S, 'settings').catch(() => { });
 
@@ -746,10 +747,75 @@ function markNow(i) {
   if (pageMode) { const pg = Math.floor(el.offsetLeft / STEP); if (pg !== pIdx) { pIdx = pg; place(); } }
   else { const r = el.offsetTop - rs.scrollTop; if (r < 140 || r > rs.clientHeight - 280) rs.scrollTo({ top: el.offsetTop - 200, behavior: RM ? 'auto' : 'smooth' }); }
 }
+// ---------- natural voices (Google Chirp 3 HD) ----------
+// iPhone hides downloaded voices from web apps, so the natural voice comes from Google with the reader's own key.
+const NA = new Audio(); try { NA.preservesPitch = true; } catch (e) { }
+let ttsKey = false, natFail = false, natOn = false, natUrl = null, warned90 = false; const natCache = new Map();
+TTS.hasKey().then(v => ttsKey = v);
+const SILENT = TTS.silentWav();
+const useNatural = () => ttsKey && S.vmode !== 'phone' && !natFail && navigator.onLine !== false;
+function chunkFrom(k) {
+  const b = SENTS[k].b, ja = LANG() === 'ja', ids = [], offs = []; let text = '';
+  for (let j = k; j < SENTS.length && SENTS[j].b === b; j++) { if (ids.length && text.length + SENTS[j].x.length > 1200) break; ids.push(j); offs.push(text.length); text += SENTS[j].x + (ja ? '' : ' '); }
+  return { ids, offs, text: text.trim() };
+}
+async function natAudio(c, lang) {
+  const voice = S.nv || TTS.NV[0].id, key = `${RB.id}|${c.ids[0]}|${c.ids[c.ids.length - 1]}|${voice}|${lang}`;
+  if (natCache.has(key)) return natCache.get(key);
+  const used = await TTS.usage();
+  if (used + c.text.length > TTS.FREE && !(await TTS.paidOk())) throw Object.assign(new Error('limit'), { code: 'limit' });
+  const pr = TTS.synthesize(c.text, lang, voice); natCache.set(key, pr); pr.catch(() => natCache.delete(key));
+  while (natCache.size > 12) natCache.delete(natCache.keys().next().value);
+  pr.then(async () => { const u = await TTS.usage(); if (!warned90 && u > TTS.FREE * .9 && u <= TTS.FREE) { warned90 = true; toast('90% of this month’s free natural voice is used', { low: true, ms: 3200 }); } }).catch(() => { });
+  return pr;
+}
+function natLimit() {
+  dialog(`<h3 class="t22" style="margin:0 0 12px">This month’s free voice is used up</h3><p class="muted" style="font-size:14px;line-height:20px;margin:0 0 20px">You’ve listened to a million characters of natural voice this month. Keep going for about $30 per million characters (roughly $15 for a whole book), or use your phone’s voice for free until next month.</p><button class="btn" id="dOk">Keep the natural voice</button><button class="btn sec" id="dNo" style="margin-top:8px">Use my phone’s voice</button>`, d => {
+    $('#dOk', d).onclick = async () => { closeDialog(); await TTS.allowPaid(); startPlay(true); };
+    $('#dNo', d).onclick = () => { closeDialog(); S.vmode = 'phone'; saveS(); startPlay(true); };
+  });
+}
+function natFallback(e, my) {
+  if (e && e.code === 'limit') { stopPlay(); natLimit(); return; }
+  natFail = true; natOn = false;
+  if (e && e.code && e.code !== 'offline') toast(esc(e.message), { low: true, ms: 3400 });
+  else toast('Using your phone’s voice for now', { low: true });
+  if (e && e.code === 'badkey') ttsKey = false;
+  if (my === gen && playing) speakNext();
+}
+async function speakNatural(my) {
+  const ja = LANG() === 'ja', lang = ja ? 'ja' : 'en'; const c = chunkFrom(pi);
+  natOn = true; try { synth && synth.cancel(); } catch (e) { }
+  markNow(c.ids[0]); updMini(); mediaMeta();
+  let blob; try { blob = await natAudio(c, lang); } catch (e) { if (my !== gen || !playing) return; return natFallback(e, my); }
+  if (my !== gen || !playing) return;
+  const nk = c.ids[c.ids.length - 1] + 1;
+  if (nk < SENTS.length && SENTS[nk].b < studyLimit()) natAudio(chunkFrom(nk), lang).catch(() => { });
+  if (natUrl) URL.revokeObjectURL(natUrl); natUrl = URL.createObjectURL(blob);
+  NA.src = natUrl; NA.playbackRate = S.rate;
+  const total = Math.max(1, c.text.length);
+  NA.ontimeupdate = () => { if (my !== gen) return; const d = NA.duration; if (!d || !isFinite(d)) return; const at = NA.currentTime / d * total; let k = 0; c.offs.forEach((o, j) => { if (at >= o) k = j; }); if (c.ids[k] !== pi) { pi = c.ids[k]; markNow(pi); updMini(); } };
+  NA.onended = () => { if (my !== gen || !playing) return; pi = c.ids[c.ids.length - 1] + 1; speakNext(); };
+  try { await NA.play(); } catch (e) { if (my !== gen || !playing) return; natFallback(e, my); }
+}
+function mediaMeta() {
+  if (!('mediaSession' in navigator) || !RB) return;
+  try { const s = SENTS[pi]; navigator.mediaSession.metadata = new MediaMetadata({ title: (chapterAt(s ? s.b : 0).c || {}).title || RB.title, artist: RB.title, album: 'Shiori' }); } catch (e) { }
+}
+if ('mediaSession' in navigator) {
+  try {
+    navigator.mediaSession.setActionHandler('play', () => startPlay(true));
+    navigator.mediaSession.setActionHandler('pause', () => stopPlay());
+    navigator.mediaSession.setActionHandler('nexttrack', () => { pi = Math.min(SENTS.length - 1, pi + 1); if (playing) speakNext(); });
+    navigator.mediaSession.setActionHandler('previoustrack', () => { pi = Math.max(0, pi - 1); if (playing) speakNext(); });
+  } catch (e) { }
+}
 function speakNext() {
   if (!playing) return; clearTimeout(lt); const my = ++gen;
   if (pi >= SENTS.length) { stopPlay(); toast('End of the book', { low: true }); return; }
   if (SENTS[pi].b >= studyLimit()) { stopPlay(); toast('Answer this chapter’s questions to keep listening', { low: true, ms: 2600 }); return; }
+  if (useNatural()) return speakNatural(my);
+  natOn = false; try { NA.pause(); } catch (e) { }
   const ja = LANG() === 'ja'; const b = SENTS[pi].b; const ids = []; for (let k = pi; k < SENTS.length && SENTS[k].b === b; k++) ids.push(k);
   let text = ''; const offs = []; ids.forEach(k => { offs.push(text.length); text += SENTS[k].x + (ja ? '' : ' '); });
   markNow(ids[0]); updMini();
@@ -765,8 +831,8 @@ function speakNext() {
   } catch (e) { est(); }
 }
 function firstVisibleSent() { const i = topBlock(); for (let k = 0; k < SENTS.length; k++) if (SENTS[k].b >= i) return k; return 0; }
-function startPlay(keepPi) { if (!SENTS.length) { toast('Nothing to read aloud in this book', { low: true }); return; } playing = true; if (!keepPi) pi = firstVisibleSent(); speakNext(); syncPlayBtns(); }
-function stopPlay() { playing = false; gen++; clearTimeout(lt); try { synth && synth.cancel(); } catch (e) { } $$('.s.now').forEach(x => x.classList.remove('now')); syncPlayBtns(); }
+function startPlay(keepPi) { if (!SENTS.length) { toast('Nothing to read aloud in this book', { low: true }); return; } natFail = false; if (useNatural()) { try { NA.src = SILENT; NA.play().catch(() => { }); } catch (e) { } } playing = true; if (!keepPi) pi = firstVisibleSent(); speakNext(); syncPlayBtns(); }
+function stopPlay() { playing = false; gen++; clearTimeout(lt); try { synth && synth.cancel(); } catch (e) { } try { NA.pause(); } catch (e) { } $$('.s.now').forEach(x => x.classList.remove('now')); syncPlayBtns(); }
 function syncPlayBtns() { const b = $('#lPlay'); if (b) b.innerHTML = ic(playing ? 'pause' : 'play', 26, '#fff'); $('#miniPlay').innerHTML = ic(playing ? 'pause' : 'play', 18, '#fff'); }
 function updMini() { if (!RB) return; const s = SENTS[pi]; $('#miniTitle').textContent = s ? ((chapterAt(s.b).c || {}).title || RB.title) : RB.title; $('#miniPb').outerHTML = pbar(20, Math.round(pi / Math.max(1, SENTS.length) * 20), 'id="miniPb" style="margin-top:6px"'); const lp = $('#lPb'); if (lp) lp.outerHTML = pbar(32, Math.round(pi / Math.max(1, SENTS.length) * 32), 'id="lPb"'); }
 const mini = $('#mini'); ph.appendChild(mini);
@@ -780,21 +846,58 @@ function openListen() {
   sheet(`<div class="t20" style="text-align:center;margin-top:8px">${esc((chapterAt(SENTS[pi] ? SENTS[pi].b : topBlock()).c || {}).title || RB.title)}</div><div class="muted" style="font-size:12px;text-align:center;margin-top:4px">The grey line is what you hear</div><div style="margin-top:20px">${pbar(32, Math.round(pi / Math.max(1, SENTS.length) * 32), 'id="lPb"')}</div>
   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px"><button class="sq" style="width:56px" id="lSpd"><span class="mono" style="font-size:12px">${S.rate}×</span></button><button id="lRew" aria-label="Back one sentence" style="padding:8px">${ic('rew', 26)}</button><button id="lPlay" class="btn" style="width:64px;height:64px" aria-label="Play or pause">${ic(playing ? 'pause' : 'play', 26, '#fff')}</button><button id="lFwd" aria-label="Forward one sentence" style="padding:8px">${ic('fwd', 26)}</button><button class="sq" style="width:56px" id="lVoice"><span class="mono" style="font-size:11px">Voice</span></button></div>
   <div class="row" style="margin-top:20px"><span style="font-weight:500">Scroll along with the voice</span><button class="tog ${S.scrollAlong ? 'on' : ''}" id="lTog" aria-label="Scroll along"></button></div>
-  <div class="muted small" style="margin-top:12px;line-height:18px">Voice: ${v ? esc(v.name) : 'your phone’s default'}. Your phone’s own voices are free and work offline.</div>`, b => {
+  <div class="muted small" style="margin-top:12px;line-height:18px">${useNatural() ? `Voice: ${esc(TTS.voiceById(S.nv).name)} · natural voice` : `Voice: ${v ? esc(v.name) : 'your phone’s default'}${ttsKey ? '' : ' · add a Google key in Settings for natural voices'}`}</div>`, b => {
     $('#lPlay', b).onclick = () => { playing ? stopPlay() : startPlay(true); };
     $('#lRew', b).onclick = () => { pi = Math.max(0, pi - 1); if (playing) speakNext(); else markNow(pi); };
     $('#lFwd', b).onclick = () => { pi = Math.min(SENTS.length - 1, pi + 1); if (playing) speakNext(); else markNow(pi); };
-    $('#lSpd', b).onclick = e => { const o = [0.75, 1, 1.25, 1.5, 2]; S.rate = o[(o.indexOf(S.rate) + 1) % o.length]; saveS(); e.currentTarget.innerHTML = `<span class="mono" style="font-size:12px">${S.rate}×</span>`; if (playing) speakNext(); };
+    $('#lSpd', b).onclick = e => { const o = [0.75, 1, 1.25, 1.5, 2]; S.rate = o[(o.indexOf(S.rate) + 1) % o.length]; saveS(); e.currentTarget.innerHTML = `<span class="mono" style="font-size:12px">${S.rate}×</span>`; if (playing) { if (natOn) NA.playbackRate = S.rate; else speakNext(); } };
     $('#lTog', b).onclick = e => { S.scrollAlong = !S.scrollAlong; saveS(); e.currentTarget.classList.toggle('on', S.scrollAlong); };
     $('#lVoice', b).onclick = () => voiceSheet();
   }, () => { if (playing) showMini(true); });
   if (!playing) pi = firstVisibleSent();
 }
-function voiceSheet() {
-  loadV(); const ja = LANG() === 'ja', lang = ja ? 'ja' : 'en'; const vs = vlist(lang).slice(0, 10); const curV = pickVoice(lang);
-  sheet(`<div style="display:flex;align-items:center;gap:12px;margin:4px 0 8px"><button class="sq" id="vBack" aria-label="Back">${ic('back')}</button><h3 class="t24" style="margin:0">Voice</h3></div><p class="muted" style="font-size:13px;line-height:19px;margin:8px 0 16px">Tap a voice to hear it. For the smoothest reading on iPhone, download an <b style="color:#111">Enhanced</b> or <b style="color:#111">Premium</b> voice in Settings › Accessibility › Spoken Content › Voices, then come back here.</p>${vs.length ? vs.map((v, k) => `<button class="row" data-v="${esc(v.voiceURI)}" style="height:56px"><span style="display:flex;gap:12px;align-items:center"><span class="rad" style="width:18px;height:18px;border:1px solid #111;border-radius:50%;display:grid;place-items:center;flex:none">${curV && curV.voiceURI === v.voiceURI ? '<i style="width:10px;height:10px;border-radius:50%;background:#111;display:block"></i>' : ''}</span><span style="text-align:left">${esc(v.name.replace(/\s*\(.*\)/, ''))}<br><span class="mono muted" style="font-size:10px">${esc(v.lang)}${/premium|enhanced|natural|neural|online/i.test(v.name) ? ' · SMOOTH' : ''}</span></span></span>${k === 0 ? '<span class="mono" style="font-size:10px;border:1px solid #111;padding:2px 6px">BEST</span>' : ''}</button>`).join('') : '<p class="muted">No voices found on this device.</p>'}`, b => {
+const fmtK = n => n >= 1e6 ? (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M' : Math.round(n / 1000) + 'K';
+const vRad = on => `<span class="rad" style="width:16px;flex:none;display:grid;place-items:center">${on ? ic('check', 16) : ''}</span>`;
+async function voiceSheet() {
+  loadV(); const ja = LANG() === 'ja', lang = ja ? 'ja' : 'en'; const nat = ttsKey && S.vmode !== 'phone'; const curNv = S.nv || TTS.NV[0].id; const pv = pickVoice(lang); const used = ttsKey ? await TTS.usage() : 0;
+  const row = (attr, on, name, desc, pvId) => `<div class="vrow" ${attr}><button class="vpick" style="display:flex;gap:12px;align-items:center;flex:1;text-align:left;min-width:0">${vRad(on)}<span style="min-width:0"><span style="display:block;font-size:15px;font-weight:${on ? 600 : 400}">${esc(name)}</span><span class="muted" style="display:block;font-size:12px;line-height:16px">${esc(desc)}</span></span></button><button class="sq vplay" data-pv="${esc(pvId)}" aria-label="Hear ${esc(name)}" style="width:40px;height:36px">${ic('vol', 16)}</button></div>`;
+  sheet(`<div style="display:flex;align-items:center;gap:12px;margin:4px 0 16px"><button class="sq" id="vBack" aria-label="Back">${ic('back')}</button><h3 class="t24" style="margin:0">Voice &amp; speed</h3></div>
+  <div class="lbl" style="margin-bottom:4px">Natural voices · online</div>
+  ${ttsKey ? TTS.NV.map(v => row(`data-nv="${v.id}"`, nat && curNv === v.id, v.name, v.d, v.id)).join('') : `<div style="background:var(--so);padding:14px 16px;margin:6px 0 4px"><p style="margin:0 0 10px;font-size:14px;line-height:20px">Natural voices sound like a real narrator. Add your Google key once to use them — the first million characters a month are free.</p><button class="btn sm" id="vSetup" style="height:40px;font-size:12px">Set up natural voices</button></div>`}
+  <div class="lbl" style="margin:20px 0 4px">On this phone · free, offline</div>
+  ${row('data-phone="1"', !nat, 'Phone voice', (pv ? pv.name.replace(/\s*\(.*\)/, '') + ' — used offline, sounds more robotic' : 'Used offline — sounds more robotic'), 'phone')}
+  <button class="link" id="vPhoneList" style="margin-top:8px;font-size:11px">Choose phone voice</button>
+  <div class="lbl" style="margin:22px 0 8px">Speed</div><div class="seg" id="vSpd">${[0.75, 1, 1.25, 1.5, 2].map(r => `<button class="${S.rate === r ? 'on' : ''}" data-r="${r}">${r}×</button>`).join('')}</div>
+  ${ttsKey ? `<div style="display:flex;gap:10px;align-items:center;margin-top:18px">${pbar(12, Math.min(12, Math.round(used / TTS.FREE * 12)))}<span class="mono muted" style="font-size:9px;letter-spacing:.06em">${fmtK(used)} OF 1M FREE THIS MONTH</span></div>` : ''}`, b => {
     $('#vBack', b).onclick = () => openListen();
-    $$('[data-v]', b).forEach(r => r.onclick = () => { S['voice_' + lang] = r.dataset.v; saveS(); $$('[data-v] .rad', b).forEach(x => x.innerHTML = x.closest('[data-v]') === r ? '<i style="width:10px;height:10px;border-radius:50%;background:#111;display:block"></i>' : ''); const was = playing; stopPlay(); try { const u = new SpeechSynthesisUtterance(ja ? 'この声で本を読みます。' : 'This is how I’ll read your book.'); const v = voices.find(x => x.voiceURI === r.dataset.v); if (v) { u.voice = v; u.lang = v.lang; } u.rate = .95; u.onend = () => { if (was) startPlay(true); }; synth.speak(u); } catch (e) { } });
+    const vs = $('#vSetup', b); if (vs) vs.onclick = () => { closeSheet(); go('settings'); };
+    $('#vPhoneList', b).onclick = () => phoneVoiceSheet();
+    const restart = () => { if (playing) { const was = pi; stopPlay(); pi = was; startPlay(true); } };
+    $$('[data-nv] .vpick', b).forEach(x => x.onclick = () => { S.nv = x.parentElement.dataset.nv; S.vmode = 'natural'; saveS(); voiceSheet(); restart(); });
+    const ph = $('[data-phone] .vpick', b); ph.onclick = () => { S.vmode = 'phone'; saveS(); voiceSheet(); restart(); };
+    $$('#vSpd button', b).forEach(x => x.onclick = () => { S.rate = +x.dataset.r; saveS(); $$('#vSpd button', b).forEach(y => y.classList.toggle('on', y === x)); if (playing) { if (natOn) NA.playbackRate = S.rate; else speakNext(); } });
+    $$('.vplay', b).forEach(x => x.onclick = () => previewVoice(x.dataset.pv, x));
+  }, () => { if (playing) showMini(true); });
+}
+const previewCache = new Map();
+async function previewVoice(id, btn) {
+  const ja = LANG() === 'ja', lang = ja ? 'ja' : 'en'; const line = ja ? 'この声で本を読みます。' : 'This is how I’ll read your book.';
+  if (playing) stopPlay();
+  try { synth && synth.cancel(); } catch (e) { }
+  if (id === 'phone') { try { const u = new SpeechSynthesisUtterance(line); const v = pickVoice(lang); if (v) { u.voice = v; u.lang = v.lang; } synth.speak(u); } catch (e) { } return; }
+  btn.classList.add('busy');
+  try { NA.src = SILENT; NA.play().catch(() => { }); } catch (e) { }
+  try {
+    const k = id + lang; if (!previewCache.has(k)) previewCache.set(k, TTS.synthesize(line, lang, id));
+    const blob = await previewCache.get(k); NA.src = URL.createObjectURL(blob); NA.playbackRate = 1; NA.onended = null; NA.ontimeupdate = null; await NA.play();
+  } catch (e) { previewCache.delete(id + lang); toast(esc(e.message || 'Couldn’t play that voice'), { low: true, ms: 3200 }); }
+  btn.classList.remove('busy');
+}
+function phoneVoiceSheet() {
+  loadV(); const ja = LANG() === 'ja', lang = ja ? 'ja' : 'en'; const vs = vlist(lang).slice(0, 10); const curV = pickVoice(lang);
+  sheet(`<div style="display:flex;align-items:center;gap:12px;margin:4px 0 8px"><button class="sq" id="vBack" aria-label="Back">${ic('back')}</button><h3 class="t24" style="margin:0">Phone voice</h3></div><p class="muted" style="font-size:13px;line-height:19px;margin:8px 0 16px">Tap a voice to hear it. These are the voices iPhone lets web apps use — they work offline and cost nothing.</p>${vs.length ? vs.map((v, k) => `<button class="row" data-v="${esc(v.voiceURI)}" style="height:56px"><span style="display:flex;gap:12px;align-items:center"><span class="rad" style="width:18px;height:18px;border:1px solid #111;border-radius:50%;display:grid;place-items:center;flex:none">${curV && curV.voiceURI === v.voiceURI ? '<i style="width:10px;height:10px;border-radius:50%;background:#111;display:block"></i>' : ''}</span><span style="text-align:left">${esc(v.name.replace(/\s*\(.*\)/, ''))}<br><span class="mono muted" style="font-size:10px">${esc(v.lang)}${/premium|enhanced|natural|neural|online/i.test(v.name) ? ' · SMOOTH' : ''}</span></span></span>${k === 0 ? '<span class="mono" style="font-size:10px;border:1px solid #111;padding:2px 6px">BEST</span>' : ''}</button>`).join('') : '<p class="muted">No voices found on this device.</p>'}`, b => {
+    $('#vBack', b).onclick = () => voiceSheet();
+    $$('[data-v]', b).forEach(r => r.onclick = () => { S['voice_' + lang] = r.dataset.v; S.vmode = 'phone'; saveS(); $$('[data-v] .rad', b).forEach(x => x.innerHTML = x.closest('[data-v]') === r ? '<i style="width:10px;height:10px;border-radius:50%;background:#111;display:block"></i>' : ''); const was = playing; stopPlay(); try { const u = new SpeechSynthesisUtterance(ja ? 'この声で本を読みます。' : 'This is how I’ll read your book.'); const v = voices.find(x => x.voiceURI === r.dataset.v); if (v) { u.voice = v; u.lang = v.lang; } u.rate = .95; u.onend = () => { if (was) startPlay(true); }; synth.speak(u); } catch (e) { } });
   }, () => { if (playing) showMini(true); });
 }
 $('#tListen').onclick = openListen;
@@ -886,11 +989,18 @@ ENTER.journal = async () => {
 ENTER.settings = async () => {
   let est = ''; try { const e = await navigator.storage.estimate(); est = `${(e.usage / 1048576).toFixed(1)} MB used`; } catch (e) { }
   let persisted = false; try { persisted = await navigator.storage.persisted(); } catch (e) { }
-  const syncHTML = await syncSection(); const syncOn = (await SY.status()).connected; const ai = await AI.getAI();
+  const syncHTML = await syncSection(); const syncOn = (await SY.status()).connected; const ai = await AI.getAI(); const tts = await TTS.getTTS(); const ttsUsed = await TTS.usage();
   $('#setBody').innerHTML = `<div class="lbl" style="margin:8px 0 8px">Sync</div>${syncHTML}<div class="lbl" style="margin:32px 0 8px">Chapter challenges</div><p class="muted small" style="line-height:18px;margin:0 0 4px">Challenges are written and checked by Claude, using your own Claude API key. It stays on this device only.</p>
   <label class="field"><span class="lbl">Claude API key</span><input id="aiKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="${ai.key ? '•••• ' + esc(ai.key.slice(-4)) + ' saved' : 'sk-ant-…'}"></label>
   <div class="row" style="height:56px;border:0"><span>Model</span><div class="seg" style="width:200px;height:32px" id="aiModel"><button class="${(ai.model || 'smart') === 'smart' ? 'on' : ''}" data-v="smart">SMARTER</button><button class="${ai.model === 'quick' ? 'on' : ''}" data-v="quick">QUICKER</button></div></div>
   <button class="btn sec" id="aiSave">Save and test</button>${ai.key ? '<button class="link" id="aiDel" style="margin-top:12px;color:#B3261E">Remove key</button>' : ''}
+  <div class="lbl" style="margin:32px 0 8px">Natural voices</div><p class="muted small" style="line-height:18px;margin:0 0 4px">Shiori reads your books with Google’s natural voices, using your own Google Cloud key. The first 1 million characters each month are free — about two books.</p>
+  <label class="field"><span class="lbl">Google Cloud API key</span><input id="ttsKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="${tts.key ? '•••• ' + esc(tts.key.slice(-4)) + ' saved' : 'AIza…'}"></label>
+  <button class="btn" id="ttsSave">Save and test</button>
+  ${tts.key ? `<div style="background:var(--so);padding:14px 16px;margin-top:14px"><div class="lbl" style="margin-bottom:8px">This month</div>${pbar(24, Math.min(24, Math.round(ttsUsed / TTS.FREE * 24)))}<p style="font-size:13px;line-height:19px;margin:8px 0 0">${ttsUsed.toLocaleString('en-US')} of 1,000,000 free characters used. After that it’s about $30 per million — Shiori asks before you go over.</p></div>` : ''}
+  <button class="link" id="ttsHow" style="margin-top:14px;display:block">How to get a key</button>
+  <p class="muted small" style="line-height:17px;margin:8px 0 0">The key stays on this device. On your PC, paste it there once too. Pick the voice in the reader: headphones → Voice.</p>
+  ${tts.key ? '<button class="link" id="ttsDel" style="margin-top:12px;color:#B3261E">Remove key</button>' : ''}
   <div class="lbl" style="margin:32px 0 8px">Your library</div>
   <div class="row" style="min-height:56px"><span>Books on this device<br><span class="muted small">${BOOKS.length} book${BOOKS.length === 1 ? '' : 's'}${est ? ' · ' + est : ''}</span></span></div>
   <div class="row" style="min-height:56px"><span>Keep my books safe<br><span class="muted small">${persisted ? 'On — your phone won’t clear Shiori’s storage' : 'Asks your phone not to clear Shiori’s storage'}</span></span>${persisted ? ic('check', 18) : '<button class="btn sm sec" id="persist" style="width:auto;height:36px;padding:0 12px;font-size:11px">Turn on</button>'}</div>
@@ -902,6 +1012,9 @@ ENTER.settings = async () => {
   hydrate($('#setBody')); wireSync($('#setBody'));
   $$('#aiModel button').forEach(x => x.onclick = async () => { $$('#aiModel button').forEach(y => y.classList.toggle('on', y === x)); await AI.setAI({ model: x.dataset.v }); });
   $('#aiSave').onclick = async () => { const v = $('#aiKey').value.trim(); if (v) await AI.setAI({ key: v }); if (!(await AI.hasKey())) { toast('Paste your key first', { low: true }); return; } $('#aiSave').disabled = true; $('#aiSave').textContent = 'Testing…'; try { await AI.testKey(); toast('Key works — challenges are ready', { low: true }); } catch (e) { toast(esc(e.message), { low: true, ms: 3200 }); } ENTER.settings(); };
+  $('#ttsSave').onclick = async () => { const v = $('#ttsKey').value.trim(); if (v) await TTS.setTTS({ key: v }); if (!(await TTS.hasKey())) { toast('Paste your key first', { low: true }); return; } $('#ttsSave').disabled = true; $('#ttsSave').textContent = 'Testing…'; try { await TTS.testKey(); ttsKey = true; natFail = false; S.vmode = 'natural'; saveS(); toast('Key works — natural voices are ready', { low: true }); } catch (e) { toast(esc(e.message), { low: true, ms: 4200 }); } ENTER.settings(); };
+  $('#ttsHow').onclick = () => sheet(`<h3 class="t24" style="margin:4px 0 12px">Get a Google key</h3><ol style="font-size:14px;line-height:21px;padding-left:18px;margin:0 0 16px"><li>Go to <b>console.cloud.google.com</b> and create a project (call it Shiori).</li><li>Turn on <b>billing</b> for it. Google needs a card even for the free million characters.</li><li>Search for <b>Cloud Text-to-Speech API</b> and tap <b>Enable</b>.</li><li>Go to <b>APIs &amp; Services → Credentials → Create credentials → API key</b>.</li><li>Tap the key to limit it: under <b>Websites</b> add <b>https://melvyu.github.io/*</b>, and under <b>API restrictions</b> pick <b>Cloud Text-to-Speech API</b>.</li><li>Copy the key and paste it here.</li></ol><button class="btn" id="hwOk">Got it</button>`, b => { $('#hwOk', b).onclick = closeSheet; });
+  const td = $('#ttsDel'); if (td) td.onclick = async () => { await TTS.setTTS({ key: '' }); ttsKey = false; ENTER.settings(); toast('Key removed', { low: true }); };
   const ad = $('#aiDel'); if (ad) ad.onclick = async () => { await AI.setAI({ key: '' }); ENTER.settings(); toast('Key removed', { low: true }); };
   const pb = $('#persist'); if (pb) pb.onclick = async () => { let ok = false; try { ok = await navigator.storage.persist(); } catch (e) { } toast(ok ? 'Turned on' : 'Your phone said no — adding Shiori to your Home Screen helps', { low: true, ms: 3200 }); ENTER.settings(); };
   $('#bkOut').onclick = exportBackup; $('#bkIn').onclick = () => { $('#backupIn').value = ''; $('#backupIn').click(); };
