@@ -412,7 +412,7 @@ function applyLook() {
   R.classList.toggle('dark', S.theme === 'dark');
   document.querySelector('meta[name=theme-color]').content = cur() === 'reader' ? th[1] : '#ffffff';
 }
-const CONV = 3; // conversion version — older books are rebuilt once with the newer converter
+const CONV = 4; // conversion version — older books are rebuilt once with the newer converter
 let rebuilding = false;
 async function rebuildBook(b) {
   if ((b.cv || 1) >= CONV || rebuilding) return;

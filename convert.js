@@ -247,10 +247,16 @@ export async function convertPdf(file, onStep = () => { }, opts = {}) {
     if (startPage === 1 && N > 2 && coverLike(pages[0])) startPage = 2;
   }
 
+  // the copyright page is cut out wherever it sits (front, after the title, or at the back)
+  const LEGAL = [/all rights reserved/i, /\bisbn\b/i, /library of congress/i, /cataloging[- ]in[- ]publication/i, /copyright\s*(©|\(c\)|\d{4})|©\s*\d{4}/i, /no part of this (book|publication|work)/i, /without (the )?(prior )?written permission/i, /printed (and bound )?in (the )?(united|u\.?s\.?a?\b|uk\b|china|canada|great britain|england|india|germany|italy|japan|singapore|hong kong|malaysia|korea)/i];
+  const cut = new Set();
+  if (!scanned) for (const pg of pages) { if (pg.p < startPage) continue; const t = pageText(pg); const n = LEGAL.filter(re => re.test(t)).length; if ((n >= 2 && pg.chars < 4000) || (n >= 1 && pg.chars < 1200)) cut.add(pg.p); }
+  if (cut.size > Math.max(3, N * 0.1)) cut.clear(); // legal text on every page (a footer, a legal book): leave it alone
+
   // pass 3: images (crop from a rendered page) — scanned pages become whole-page images
   onStep(2, 0);
   const images = []; let imgN = 0;
-  const imgPages = pages.filter(pg => pg.p >= startPage && (scanned ? true : pg.rects.some(r => (r.x1 - r.x0) * (r.y1 - r.y0) > 2500 && !((r.x1 - r.x0) > pg.W * 0.95 && (r.y1 - r.y0) > pg.H * 0.95 && pg.chars > 200))));
+  const imgPages = pages.filter(pg => pg.p >= startPage && !cut.has(pg.p) && (scanned ? true : pg.rects.some(r => (r.x1 - r.x0) * (r.y1 - r.y0) > 2500 && !((r.x1 - r.x0) > pg.W * 0.95 && (r.y1 - r.y0) > pg.H * 0.95 && pg.chars > 200))));
   for (let k = 0; k < imgPages.length; k++) {
     const pg = imgPages[k];
     try {
@@ -296,7 +302,7 @@ export async function convertPdf(file, onStep = () => { }, opts = {}) {
     return a + ' ' + b;
   };
   for (const pg of pages) {
-    if (pg.p < startPage) continue;
+    if (pg.p < startPage || cut.has(pg.p)) continue;
     const lab = label(pg.p);
     const items = [...pg.lines.map(l => ({ ...l, t: 'line' })), ...(pg.items || [])];
     if (pg.items && pg.items.length && pg.lines.length) items.sort((a, b) => (a.col || 0) - (b.col || 0) || a.y - b.y);
