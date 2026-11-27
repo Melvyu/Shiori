@@ -1068,10 +1068,27 @@ $('#backupIn').addEventListener('change', async e => {
 // "Study it" books lock each chapter until you answer a short challenge about it.
 const studyOn = () => !!(RB && RB.study && RC && RC.toc && RC.toc.length >= 2 && !RB.scanned);
 // only real chapters get questions and locks; introductions, appendices, references, index… stay open
-const NS_EXACT = /^(introduction|intro|preface|foreword|prologue|prelude|interlude|epilogue|afterword|conclusions?|final thoughts|closing thoughts|references|bibliography|works cited|sources|further reading|recommended reading|suggested reading|resources|notes|endnotes|footnotes|glossary|index|general index|subject index|acknowledge?ments?|credits|colophon|permissions|contributors|errata|dedication|contents)([:.—–-].*)?$/i;
+const NS_EXACT = /^(introduction|intro|preface|foreword|prologue|prelude|interlude|epilogue|afterword|conclusions?|final thoughts|closing thoughts|references|bibliography|works cited|sources|further reading|recommended reading|suggested reading|resources|notes|endnotes|footnotes|glossary|index|general index|subject index|acknowledge?ments?|credits|colophon|permissions|contributors|errata|dedication|epigraph|(table of )?contents|copyright( page| notice| information)?|(half[- ]?)?title( page)?|(front ?)?cover( page)?|front ?matter|imprint|legal( notice)?|disclaimer|publisher’?'?s note|praise( for.*)?|advance praise.*|also by.*|other (books|titles) by.*)([:.—–-].*)?$/i;
 const NS_PREFIX = /^(appendi(x|ces)|about (the|this)|list of|index of|notes (on|to)|a note (on|to)|bibliograph|reference(s)? (list|section)|answers to)/i;
 const chTitle = t => String(t || '').replace(/^\s*(part|section|book)\s+[\divxlc]+\s*[.:)\-–—]?\s*/i, '').replace(/^\s*[\divxlc]+\s*[.:)\-–—]\s*/i, '').trim();
-function isStudyCh(i) { const t = RC.toc[i] ? RC.toc[i].title : ''; if (/^\s*(chapter|ch\.?)\s*[\divxlc]+/i.test(t)) return true; const c = chTitle(t); return !(NS_EXACT.test(c) || NS_PREFIX.test(c)); }
+// the copyright page and friends: never worth a question, whatever heading they sit under
+const LEGAL = /all rights reserved|\bisbn\b|library of congress|cataloging[- ]in[- ]publication|copyright\s*(©|\(c\)|\d{4})|©\s*\d{4}|no part of this (book|publication|work)|printed (and bound )?in (the )?(united|u\.?s\.?a?\b|uk\b|china|canada|great britain|england|india|germany|italy|japan|singapore|hong kong|malaysia|korea)|reproduced.{0,120}without|without (the )?(prior )?written permission/i;
+const isLegal = x => x.length < 900 && (LEGAL.test(x) || (x.length < 220 && /^(first )?(published|printing|edition)\b|\b(first|second|third|\d+(st|nd|rd|th)) (edition|printing)\b/i.test(x)));
+const studyMemo = new WeakMap();
+function isStudyCh(i) {
+  let m = studyMemo.get(RC.toc); if (!m) studyMemo.set(RC.toc, m = []);
+  if (m[i] === undefined) m[i] = studyChRaw(i);
+  return m[i];
+}
+function studyChRaw(i) {
+  const t = RC.toc[i] ? RC.toc[i].title : ''; if (/^\s*(chapter|ch\.?)\s*[\divxlc]+/i.test(t)) return true;
+  const c = chTitle(t); if (NS_EXACT.test(c) || NS_PREFIX.test(c)) return false;
+  if (!RC.toc[i] || !RC.blocks) return true;
+  // judge by what's in it too: a section that is only a copyright page / title page has nothing to ask about
+  const a = RC.toc[i].b, z = RC.toc[i + 1] ? RC.toc[i + 1].b : RC.blocks.length; let legal = 0, real = 0;
+  for (let j = a; j < z && real < 1500; j++) { const b = RC.blocks[j]; if (b.t !== 'p' || !b.x) continue; if (isLegal(b.x)) legal++; else real += b.x.length; }
+  return !(real < 300 || (legal && real < 1500));
+}
 const nextStudy = k => { const T = RC.toc.length; while (k < T && !isStudyCh(k)) k++; return k; };
 const learnedNow = () => nextStudy(RB.learned || 0);
 const lastStudy = () => { for (let i = RC.toc.length - 1; i >= 0; i--) if (isStudyCh(i)) return i; return -1; };
@@ -1092,7 +1109,7 @@ function lockHTML(state = 'locked', px = 3, col = 'currentColor', inv = '#fff') 
   const rows = LOCK_ROWS[state];
   return `<span class="plock" aria-hidden="true" style="grid-template-columns:repeat(9,${px}px);grid-auto-rows:${px}px">${rows.map(r => [...r].map(ch => `<i style="background:${ch === '#' ? col : ch === 'w' ? inv : 'transparent'}"></i>`).join('')).join('')}</span>`;
 }
-function chapterText(k) { const a = RC.toc[k].b, z = RC.toc[k + 1] ? RC.toc[k + 1].b : RC.blocks.length; let t = ''; for (let i = a; i < z; i++) { const b = RC.blocks[i]; if (b.t === 'h') t += '\n## ' + b.x + '\n'; else if (b.t === 'p') t += b.x + '\n'; } return t.slice(0, 60000); }
+function chapterText(k) { const a = RC.toc[k].b, z = RC.toc[k + 1] ? RC.toc[k + 1].b : RC.blocks.length; let t = ''; for (let i = a; i < z; i++) { const b = RC.blocks[i]; if (b.t === 'h') t += '\n## ' + b.x + '\n'; else if (b.t === 'p' && !isLegal(b.x)) t += b.x + '\n'; } return t.slice(0, 60000); }
 // Each chapter ends with 3 open questions about what it teaches (the 3rd a little harder). After the last chapter: a 5-question final exam.
 const EXAM = 'exam';
 const setOf = k => k === EXAM ? RB.exam : (RB.ch || {})[k];

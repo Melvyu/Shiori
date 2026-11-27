@@ -29,6 +29,7 @@ async function call(system, user, maxTokens = 1200) {
 export async function testKey() { const r = await call('Reply with JSON only.', 'Return {"ok":true}', 20); return !!r.ok; }
 
 const NEVER = `Never ask about:
+- The book as an object: copyright, publisher, edition, ISBN, legal notices, dedication, acknowledgements, the table of contents, or how the book is organised. If the text includes such pages, ignore them.
 - The author: their life, career, opinions about themselves, or why they wrote the book.
 - Trivia: names of people, companies, products or games used as examples, dates, numbers, quotes, or the order things appear in.
 - The author's own examples. If the chapter teaches through an example, ask the reader to use the same idea on a NEW situation instead.
